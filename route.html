@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>경로 안내</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+    }
+    .phone {
+      width: 390px;
+      height: 844px;
+      background: #fff;
+      border-radius: 28px;
+      overflow: hidden;
+      position: relative;
+    }
+    .header {
+      padding: 20px 16px;
+      font-size: 22px;
+      font-weight: bold;
+      border-bottom: 1px solid #eee;
+    }
+    .content {
+      padding: 20px 16px;
+    }
+    .step {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 24px;
+      align-items: flex-start;
+    }
+    .dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+    .red { background: #eb6a6a; }
+    .green { background: #45d10f; }
+    .yellow { background: #f0b400; }
+    .blue { background: #5aa1ff; }
+    .step-title {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .step-desc {
+      color: #666;
+      font-size: 13px;
+    }
+    .actions {
+      position: absolute;
+      bottom: 20px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      gap: 12px;
+    }
+    button {
+      flex: 1;
+      border: none;
+      border-radius: 14px;
+      padding: 16px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .report {
+      background: #efefef;
+    }
+    .favorite {
+      background: #f4c20d;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <div class="header">← 경로 안내</div>
+    <div class="content">
+      <div class="step">
+        <div class="dot red"></div>
+        <div>
+          <div class="step-title">현재 위치에서 출발</div>
+          <div class="step-desc">출발 지점 기준 안내를 시작합니다.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="dot green"></div>
+        <div>
+          <div class="step-title">방향을 유지하며 60m 이동</div>
+          <div class="step-desc">보행 보조, 장애물 없음</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="dot yellow"></div>
+        <div>
+          <div class="step-title">우회전 후 40m 직진</div>
+          <div class="step-desc">안전한 경로 / 주의하여 이동</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="dot blue"></div>
+        <div>
+          <div class="step-title" id="destinationTitle">목적지 도착</div>
+          <div class="step-desc">약 3분 소요</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="report" onclick="goReport()">제보하기</button>
+      <button class="favorite">즐겨찾기</button>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const name = params.get("name");
+
+    if (name) {
+      document.getElementById("destinationTitle").textContent = `${name} 도착`;
+    }
+
+    function goReport() {
+      location.href = `report.html${location.search}`;
+    }
+  </script>
+</body>
+</html>
