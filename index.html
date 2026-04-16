@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AccessNav Web</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+
+<div class="phone">
+
+  <!-- 지도 -->
+  <div id="map"></div>
+
+  <!-- 검색창 -->
+  <div class="search-bar">
+    <span class="icon">☰</span>
+    <input placeholder="장소를 입력하세요" />
+    <span class="icon">✕</span>
+  </div>
+
+  <!-- 카테고리 -->
+  <div class="chips">
+    <div class="chip">🚕 택시 정류장</div>
+    <div class="chip">🏪 편의점</div>
+    <div class="chip">☕ 카페</div>
+  </div>
+
+  <!-- 오른쪽 버튼 -->
+  <div class="right-buttons">
+    <div class="circle">⭐</div>
+    <div class="circle">⚙️</div>
+  </div>
+
+  <!-- 날씨 -->
+  <div class="weather">
+    ☁️ 16
+  </div>
+
+  <!-- 하단 네비 -->
+  <div class="bottom-nav">
+    <div class="nav-item active">🏠</div>
+    <div class="nav-item">📍</div>
+    <div class="nav-item">📷</div>
+    <div class="nav-item">👤</div>
+  </div>
+
+</div>
+
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d"></script>
+<script src="./script.js"></script>
+
+</body>
+</html>
