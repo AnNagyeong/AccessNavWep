@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -107,4 +108,238 @@
     }
   </script>
 </body>
+=======
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>위험 구간 제보</title>
+  <link rel="stylesheet" href="./style.css" />
+  <style>
+    .report-layout {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    #reportMap {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .report-panel {
+      position: absolute;
+      left: 24px;
+      top: 24px;
+      bottom: 24px;
+      width: 470px;
+      background: rgba(245, 245, 245, 0.97);
+      border-radius: 30px;
+      padding: 22px;
+      z-index: 20;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+      overflow-y: auto;
+    }
+
+    .report-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .report-back {
+      border: none;
+      background: #fff;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+    }
+
+    .report-title {
+      font-size: 28px;
+      font-weight: bold;
+      color: #111;
+    }
+
+    .report-place {
+      background: #fff;
+      border-radius: 20px;
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+
+    .report-place h2 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    .report-place p {
+      margin: 0;
+      color: #666;
+      font-size: 15px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 15px;
+      font-weight: bold;
+      color: #222;
+    }
+
+    .form-group select,
+    .form-group textarea,
+    .form-group input {
+      width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 16px;
+      padding: 14px;
+      font-size: 15px;
+      box-sizing: border-box;
+      background: #fff;
+    }
+
+    .form-group textarea {
+      min-height: 140px;
+      resize: none;
+    }
+
+    .submit-btn {
+      width: 100%;
+      border: none;
+      border-radius: 18px;
+      padding: 18px;
+      font-size: 22px;
+      background: #53d400;
+      color: #fff;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 900px) {
+      .report-panel {
+        left: 16px;
+        right: 16px;
+        top: auto;
+        width: auto;
+        bottom: 16px;
+        max-height: 75vh;
+      }
+
+      .report-title {
+        font-size: 22px;
+      }
+
+      .report-place h2 {
+        font-size: 24px;
+      }
+
+      .submit-btn {
+        font-size: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="report-layout">
+    <div id="reportMap"></div>
+
+    <div class="report-panel">
+      <div class="report-header">
+        <button class="report-back" onclick="history.back()">←</button>
+        <div class="report-title">위험 구간 제보</div>
+      </div>
+
+      <div class="report-place">
+        <h2 id="reportPlaceName">선택 장소</h2>
+        <p id="reportPlaceAddress">주소 정보 없음</p>
+      </div>
+
+      <div class="form-group">
+        <label for="reportType">제보 유형</label>
+        <select id="reportType">
+          <option>턱이 높아요</option>
+          <option>길이 좁아요</option>
+          <option>공사 중이에요</option>
+          <option>장애물이 있어요</option>
+          <option>계단이 있어요</option>
+          <option>바닥이 미끄러워요</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="reportDetail">상세 설명</label>
+        <textarea id="reportDetail" placeholder="위험 구간에 대해 자세히 적어주세요."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="reportImage">사진 첨부</label>
+        <input type="file" id="reportImage" />
+      </div>
+
+      <button class="submit-btn" id="submitReportBtn">제보 등록</button>
+    </div>
+  </div>
+
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_JAVASCRIPT_KEY&libraries=services"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const name = params.get("name") || "선택 장소";
+    const address = params.get("address") || "주소 정보 없음";
+    const x = Number(params.get("x")) || 127.03811;
+    const y = Number(params.get("y")) || 37.56184;
+
+    document.getElementById("reportPlaceName").textContent = name;
+    document.getElementById("reportPlaceAddress").textContent = address;
+
+    const container = document.getElementById("reportMap");
+    const options = {
+      center: new kakao.maps.LatLng(y, x),
+      level: 3,
+    };
+
+    const map = new kakao.maps.Map(container, options);
+
+    const marker = new kakao.maps.Marker({
+      position: new kakao.maps.LatLng(y, x),
+      map: map,
+    });
+
+    const infowindow = new kakao.maps.InfoWindow({
+      content: `<div style="padding:8px 12px; font-size:13px;">제보 위치</div>`,
+    });
+
+    infowindow.open(map, marker);
+
+    document.getElementById("submitReportBtn").addEventListener("click", function () {
+      const reportData = {
+        name,
+        address,
+        x,
+        y,
+        type: document.getElementById("reportType").value,
+        detail: document.getElementById("reportDetail").value
+      };
+
+      console.log("제보 데이터:", reportData);
+      alert("제보가 등록되었습니다.");
+      location.href = "./index.html";
+    });
+  </script>
+</body>
+>>>>>>> 794e803 (init)
 </html>

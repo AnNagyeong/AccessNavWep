@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -137,4 +138,322 @@
     }
   </script>
 </body>
+=======
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>경로 안내</title>
+  <link rel="stylesheet" href="./style.css" />
+  <style>
+    .route-layout {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    #routeMap {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .route-panel {
+      position: absolute;
+      left: 24px;
+      top: 24px;
+      bottom: 24px;
+      width: 460px;
+      background: rgba(245, 245, 245, 0.96);
+      border-radius: 30px;
+      padding: 22px;
+      z-index: 20;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+      overflow-y: auto;
+    }
+
+    .route-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .route-back {
+      border: none;
+      background: #fff;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+    }
+
+    .route-title {
+      font-size: 28px;
+      font-weight: bold;
+      color: #111;
+    }
+
+    .route-destination {
+      background: #fff;
+      border-radius: 20px;
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+
+    .route-destination h2 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      line-height: 1.2;
+    }
+
+    .route-destination p {
+      margin: 0;
+      color: #666;
+      font-size: 16px;
+    }
+
+    .route-summary {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .route-box {
+      flex: 1;
+      background: #e7e7e7;
+      border-radius: 18px;
+      padding: 16px 12px;
+      text-align: center;
+    }
+
+    .route-box strong {
+      display: block;
+      font-size: 26px;
+      margin-bottom: 6px;
+    }
+
+    .route-box span {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .steps {
+      background: #fff;
+      border-radius: 22px;
+      padding: 18px;
+    }
+
+    .step {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 20px;
+      align-items: flex-start;
+    }
+
+    .step:last-child {
+      margin-bottom: 0;
+    }
+
+    .step-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+
+    .step.red { background: #e96c6c; }
+    .step.green { background: #53d400; }
+    .step.yellow { background: #e7c400; }
+    .step.blue { background: #4f9cff; }
+
+    .step-text strong {
+      display: block;
+      font-size: 18px;
+      margin-bottom: 5px;
+      color: #111;
+    }
+
+    .step-text span {
+      color: #666;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .route-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .route-actions button {
+      flex: 1;
+      border: none;
+      border-radius: 18px;
+      padding: 16px;
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .route-report {
+      background: #dddddd;
+      color: #222;
+    }
+
+    .route-favorite {
+      background: #f2c94c;
+      color: #222;
+    }
+
+    @media (max-width: 900px) {
+      .route-panel {
+        left: 16px;
+        right: 16px;
+        top: auto;
+        width: auto;
+        bottom: 16px;
+        max-height: 70vh;
+      }
+
+      .route-title {
+        font-size: 22px;
+      }
+
+      .route-destination h2 {
+        font-size: 24px;
+      }
+
+      .route-actions button {
+        font-size: 17px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="route-layout">
+    <div id="routeMap"></div>
+
+    <div class="route-panel">
+      <div class="route-header">
+        <button class="route-back" onclick="location.href='./index.html'">←</button>
+        <div class="route-title">경로 안내</div>
+      </div>
+
+      <div class="route-destination">
+        <h2 id="destName">목적지</h2>
+        <p id="destAddress">주소 정보 없음</p>
+      </div>
+
+      <div class="route-summary">
+        <div class="route-box">
+          <strong id="routeEta">3분</strong>
+          <span>예상 시간</span>
+        </div>
+        <div class="route-box">
+          <strong id="routeDistance">100m</strong>
+          <span>거리</span>
+        </div>
+        <div class="route-box">
+          <strong id="routeDanger">2곳</strong>
+          <span>위험 구간</span>
+        </div>
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-dot step red"></div>
+          <div class="step-text">
+            <strong>현재 위치에서 출발</strong>
+            <span>출발 지점 기준으로 안전 경로 안내를 시작합니다.</span>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-dot step green"></div>
+          <div class="step-text">
+            <strong>방향을 유지하며 60m 이동</strong>
+            <span>보행 보조가 가능하고, 큰 장애물은 없습니다.</span>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-dot step yellow"></div>
+          <div class="step-text">
+            <strong>우회전 후 40m 직진</strong>
+            <span>주의 구간이 있으니 주변을 살피며 이동하세요.</span>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-dot step blue"></div>
+          <div class="step-text">
+            <strong id="arrivalText">목적지 도착</strong>
+            <span>예상 도착 시간은 약 3분입니다.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="route-actions">
+        <button class="route-report" id="goReportBtn">제보하기</button>
+        <button class="route-favorite" id="favoriteBtn">즐겨찾기</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_JAVASCRIPT_KEY&libraries=services"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const name = params.get("name") || "목적지";
+    const address = params.get("address") || "주소 정보 없음";
+    const x = Number(params.get("x")) || 127.03811;
+    const y = Number(params.get("y")) || 37.56184;
+
+    document.getElementById("destName").textContent = name;
+    document.getElementById("destAddress").textContent = address;
+    document.getElementById("arrivalText").textContent = `${name} 도착`;
+
+    const distance = 100 + (name.length % 5) * 20;
+    const eta = Math.max(1, Math.round(distance / 35));
+    const danger = (name.length % 3) + 1;
+
+    document.getElementById("routeEta").textContent = `${eta}분`;
+    document.getElementById("routeDistance").textContent = `${distance}m`;
+    document.getElementById("routeDanger").textContent = `${danger}곳`;
+
+    const container = document.getElementById("routeMap");
+    const options = {
+      center: new kakao.maps.LatLng(y, x),
+      level: 3,
+    };
+
+    const map = new kakao.maps.Map(container, options);
+
+    const marker = new kakao.maps.Marker({
+      position: new kakao.maps.LatLng(y, x),
+      map: map,
+    });
+
+    const infowindow = new kakao.maps.InfoWindow({
+      content: `<div style="padding:8px 12px; font-size:13px;">${name}</div>`,
+    });
+
+    infowindow.open(map, marker);
+
+    document.getElementById("goReportBtn").addEventListener("click", function () {
+      location.href = `./report.html?${params.toString()}`;
+    });
+
+    document.getElementById("favoriteBtn").addEventListener("click", function () {
+      alert(`${name}을(를) 즐겨찾기에 추가하는 기능을 연결하면 됩니다.`);
+    });
+  </script>
+</body>
+>>>>>>> 794e803 (init)
 </html>
