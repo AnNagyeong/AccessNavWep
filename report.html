@@ -4,9 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>위험 구간 제보</title>
-  <link rel="stylesheet" href="./style.css" />
 
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      font-family: Arial, sans-serif;
+      background: #111;
+    }
+
     .report-layout {
       position: relative;
       width: 100%;
@@ -24,147 +35,283 @@
 
     .report-panel {
       position: absolute;
-      left: 24px;
       top: 24px;
+      left: 24px;
       bottom: 24px;
-      width: 470px;
-      background: rgba(245, 245, 245, 0.97);
-      border-radius: 30px;
-      padding: 22px;
-      z-index: 20;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+      width: 390px;
+      background: #f5f5f5;
+      border-radius: 28px;
+      padding: 24px 18px 24px;
       overflow-y: auto;
+      z-index: 20;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+
+      scrollbar-width: none;       /* 파이어폭스 */
+      -ms-overflow-style: none;    /* IE */
+    }
+
+    .report-panel::-webkit-scrollbar {
+      display: none;               /* 크롬, 사파리 */
     }
 
     .report-header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 18px;
+      gap: 14px;
+      margin-bottom: 28px;
     }
 
-    .report-back {
+    .back-btn {
       border: none;
-      background: #fff;
-      width: 46px;
-      height: 46px;
-      border-radius: 50%;
-      font-size: 22px;
+      background: transparent;
+      font-size: 28px;
       cursor: pointer;
+      color: #555;
     }
 
     .report-title {
-      font-size: 28px;
-      font-weight: bold;
+      font-size: 20px;
+      font-weight: 700;
+      color: #222;
     }
 
-    .report-place {
-      background: #fff;
-      border-radius: 20px;
-      padding: 18px;
-      margin-bottom: 18px;
+    .section-label {
+      display: block;
+      font-size: 13px;
+      color: #555;
+      margin-bottom: 12px;
+      font-weight: 600;
     }
 
-    .form-group {
-      margin-bottom: 16px;
+    .chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 24px;
     }
 
-    .form-group select,
-    .form-group textarea,
-    .form-group input {
-      width: 100%;
+    .chip {
       border: 1px solid #ddd;
-      border-radius: 16px;
-      padding: 14px;
+      background: #fff;
+      border-radius: 18px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #333;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+      transition: 0.15s;
+    }
+
+    .chip.active {
+      background: #f1f1f1;
+      border-color: #bbb;
+    }
+
+    .field-box {
+      width: 100%;
+      border: 1px solid #e2e2e2;
+      border-radius: 14px;
+      background: #fff;
+      padding: 14px 16px;
+      font-size: 14px;
+      color: #333;
+      margin-bottom: 20px;
+      outline: none;
+    }
+
+    .slider-wrap {
+      margin-bottom: 24px;
+    }
+
+    .slider {
+      width: 100%;
+      accent-color: #ee6b6b;
+      cursor: pointer;
+    }
+
+    .slider-value {
+      text-align: center;
+      color: #ee6b6b;
+      font-size: 14px;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+
+    textarea.field-box {
+      min-height: 110px;
+      resize: none;
+      line-height: 1.5;
+    }
+
+    .upload-box {
+      height: 140px;
+      border: 1px solid #e2e2e2;
+      border-radius: 14px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 28px;
+      cursor: pointer;
+      text-align: center;
+      padding: 16px;
+    }
+
+    .upload-box input {
+      display: none;
     }
 
     .submit-btn {
       width: 100%;
       border: none;
-      border-radius: 18px;
-      padding: 18px;
-      font-size: 18px;
-      background: #53d400;
+      border-radius: 14px;
+      background: #49d000;
       color: #fff;
+      font-size: 18px;
+      font-weight: 700;
+      padding: 16px;
       cursor: pointer;
+    }
+
+    .submit-btn:hover {
+      opacity: 0.95;
+    }
+
+    @media (max-width: 768px) {
+      .report-panel {
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      #reportMap {
+        display: none;
+      }
     }
   </style>
 </head>
-
 <body>
   <div class="report-layout">
     <div id="reportMap"></div>
 
     <div class="report-panel">
       <div class="report-header">
-        <button class="report-back" onclick="history.back()">←</button>
+        <button class="back-btn" onclick="history.back()">←</button>
         <div class="report-title">위험 구간 제보</div>
       </div>
 
-      <div class="report-place">
-        <h2 id="reportPlaceName">선택 장소</h2>
-        <p id="reportPlaceAddress">주소 정보 없음</p>
+      <label class="section-label">제보 유형</label>
+      <div class="chip-group" id="typeChips">
+        <button type="button" class="chip active" data-type="급경사">급경사</button>
+        <button type="button" class="chip" data-type="파손 보도">파손 보도</button>
+        <button type="button" class="chip" data-type="단차">단차</button>
+        <button type="button" class="chip" data-type="미끄러운 노면">미끄러운 노면</button>
+        <button type="button" class="chip" data-type="공사 통제">공사 통제</button>
+        <button type="button" class="chip" data-type="기타">기타</button>
       </div>
 
-      <div class="form-group">
-        <label>제보 유형</label>
-        <select id="reportType">
-          <option>턱이 높아요</option>
-          <option>길이 좁아요</option>
-          <option>공사 중이에요</option>
-          <option>장애물이 있어요</option>
-          <option>계단이 있어요</option>
-        </select>
+      <label class="section-label" for="reportLocation">위치</label>
+      <input
+        type="text"
+        id="reportLocation"
+        class="field-box"
+        placeholder="위치가 여기에 표시됩니다."
+      />
+
+      <div class="slider-wrap">
+        <label class="section-label" for="slopeRange">경사도 추정(선택)</label>
+        <input type="range" min="0" max="100" value="10" class="slider" id="slopeRange" />
+        <div class="slider-value" id="slopeValue">10%</div>
       </div>
 
-      <div class="form-group">
-        <label>상세 설명</label>
-        <textarea id="reportDetail"></textarea>
-      </div>
+      <label class="section-label" for="reportDetail">상세 설명</label>
+      <textarea
+        id="reportDetail"
+        class="field-box"
+        placeholder="어떤 위험이 있었나요? 자세하게 작성해 주시면 큰 도움이 됩니다."
+      ></textarea>
 
-      <div class="form-group">
-        <label>사진 첨부</label>
-        <input type="file" id="reportImage" />
-      </div>
+      <label class="section-label">사진 첨부</label>
+      <label class="upload-box" for="reportImage">
+        📷 사진 촬영 또는 앨범에서 선택
+        <input type="file" id="reportImage" accept="image/*" />
+      </label>
 
-      <button class="submit-btn" id="submitReportBtn">제보 등록</button>
+      <button class="submit-btn" id="submitReportBtn">제보하기</button>
     </div>
   </div>
 
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_JAVASCRIPT_KEY&libraries=services"></script>
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=비공개_API_KEY&libraries=services"></script>
   <script>
     const params = new URLSearchParams(location.search);
-    const name = params.get("name") || "선택 장소";
+
+    const placeName = params.get("name") || "선택 장소";
     const address = params.get("address") || "주소 정보 없음";
     const x = Number(params.get("x")) || 127.03811;
     const y = Number(params.get("y")) || 37.56184;
 
-    document.getElementById("reportPlaceName").textContent = name;
-    document.getElementById("reportPlaceAddress").textContent = address;
+    const reportLocation = document.getElementById("reportLocation");
+    const slopeRange = document.getElementById("slopeRange");
+    const slopeValue = document.getElementById("slopeValue");
+    const typeChips = document.querySelectorAll(".chip");
+    const reportImage = document.getElementById("reportImage");
+
+    reportLocation.value = address;
+
+    slopeRange.addEventListener("input", () => {
+      slopeValue.textContent = `${slopeRange.value}%`;
+    });
+
+    typeChips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        typeChips.forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+      });
+    });
+
+    reportImage.addEventListener("change", () => {
+      const uploadBox = document.querySelector(".upload-box");
+      if (reportImage.files.length > 0) {
+        uploadBox.childNodes[0].nodeValue = `📷 ${reportImage.files[0].name}`;
+      }
+    });
 
     const map = new kakao.maps.Map(document.getElementById("reportMap"), {
       center: new kakao.maps.LatLng(y, x),
       level: 3
     });
 
-    new kakao.maps.Marker({
-      position: new kakao.maps.LatLng(y, x),
-      map: map
+    const marker = new kakao.maps.Marker({
+      map,
+      position: new kakao.maps.LatLng(y, x)
     });
 
-    document.getElementById("submitReportBtn").addEventListener("click", function () {
+    const infowindow = new kakao.maps.InfoWindow({
+      content: `<div style="padding:8px 12px; font-size:13px;">${placeName}</div>`
+    });
+
+    infowindow.open(map, marker);
+
+    document.getElementById("submitReportBtn").addEventListener("click", () => {
+      const selectedType = document.querySelector(".chip.active")?.dataset.type || "";
       const reportData = {
-        name,
-        address,
+        placeName,
+        address: reportLocation.value,
         x,
         y,
-        type: document.getElementById("reportType").value,
+        type: selectedType,
+        slope: slopeRange.value,
         detail: document.getElementById("reportDetail").value
       };
 
-      console.log(reportData);
-      alert("제보 완료");
-      location.href = "./index.html";
+      console.log("제보 데이터:", reportData);
+      alert("제보가 등록되었습니다.");
     });
   </script>
 </body>
