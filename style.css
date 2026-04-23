@@ -124,14 +124,49 @@ body {
 
 .bottom-sheet {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 70px;
+  left: 16px;
+  bottom: 86px;
+  width: 360px;
+  max-width: calc(100% - 32px);
   background: #fff;
-  border-radius: 28px 28px 0 0;
+  border-radius: 24px;
   padding: 16px;
   z-index: 25;
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.bottom-sheet.expanded {
+  max-height: 520px;
+}
+
+.bottom-sheet.collapsed {
+  height: 38px;
+  overflow: hidden;
+  padding-top: 10px;
+}
+
+.sheet-handle {
+  width: 56px;
+  height: 6px;
+  background: #cfcfcf;
+  border-radius: 999px;
+  margin: 0 auto 12px;
+  cursor: pointer;
+}
+
+.sheet-content {
+  max-height: 440px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sheet-content::-webkit-scrollbar {
+  display: none;
+}
+
+.bottom-sheet.collapsed .sheet-content {
+  display: none;
 }
 
 .sheet-handle {
