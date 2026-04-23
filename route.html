@@ -1,144 +1,3 @@
-<<<<<<< HEAD
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>경로 안내</title>
-  <style>
-    body {
-      margin: 0;
-      background: #111;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      font-family: Arial, sans-serif;
-    }
-    .phone {
-      width: 390px;
-      height: 844px;
-      background: #fff;
-      border-radius: 28px;
-      overflow: hidden;
-      position: relative;
-    }
-    .header {
-      padding: 20px 16px;
-      font-size: 22px;
-      font-weight: bold;
-      border-bottom: 1px solid #eee;
-    }
-    .content {
-      padding: 20px 16px;
-    }
-    .step {
-      display: flex;
-      gap: 14px;
-      margin-bottom: 24px;
-      align-items: flex-start;
-    }
-    .dot {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      margin-top: 4px;
-    }
-    .red { background: #eb6a6a; }
-    .green { background: #45d10f; }
-    .yellow { background: #f0b400; }
-    .blue { background: #5aa1ff; }
-    .step-title {
-      font-weight: bold;
-      margin-bottom: 4px;
-    }
-    .step-desc {
-      color: #666;
-      font-size: 13px;
-    }
-    .actions {
-      position: absolute;
-      bottom: 20px;
-      left: 16px;
-      right: 16px;
-      display: flex;
-      gap: 12px;
-    }
-    button {
-      flex: 1;
-      border: none;
-      border-radius: 14px;
-      padding: 16px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    .report {
-      background: #efefef;
-    }
-    .favorite {
-      background: #f4c20d;
-      color: #fff;
-    }
-  </style>
-</head>
-<body>
-  <div class="phone">
-    <div class="header">← 경로 안내</div>
-    <div class="content">
-      <div class="step">
-        <div class="dot red"></div>
-        <div>
-          <div class="step-title">현재 위치에서 출발</div>
-          <div class="step-desc">출발 지점 기준 안내를 시작합니다.</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="dot green"></div>
-        <div>
-          <div class="step-title">방향을 유지하며 60m 이동</div>
-          <div class="step-desc">보행 보조, 장애물 없음</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="dot yellow"></div>
-        <div>
-          <div class="step-title">우회전 후 40m 직진</div>
-          <div class="step-desc">안전한 경로 / 주의하여 이동</div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="dot blue"></div>
-        <div>
-          <div class="step-title" id="destinationTitle">목적지 도착</div>
-          <div class="step-desc">약 3분 소요</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="actions">
-      <button class="report" onclick="goReport()">제보하기</button>
-      <button class="favorite">즐겨찾기</button>
-    </div>
-  </div>
-
-  <script>
-    const params = new URLSearchParams(location.search);
-    const name = params.get("name");
-
-    if (name) {
-      document.getElementById("destinationTitle").textContent = `${name} 도착`;
-    }
-
-    function goReport() {
-      location.href = `report.html${location.search}`;
-    }
-  </script>
-</body>
-=======
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -269,10 +128,10 @@
       margin-top: 4px;
     }
 
-    .step.red { background: #e96c6c; }
-    .step.green { background: #53d400; }
-    .step.yellow { background: #e7c400; }
-    .step.blue { background: #4f9cff; }
+    .step-dot.red { background: #e96c6c; }
+    .step-dot.green { background: #53d400; }
+    .step-dot.yellow { background: #e7c400; }
+    .step-dot.blue { background: #4f9cff; }
 
     .step-text strong {
       display: block;
@@ -368,7 +227,7 @@
 
       <div class="steps">
         <div class="step">
-          <div class="step-dot step red"></div>
+          <div class="step-dot red"></div>
           <div class="step-text">
             <strong>현재 위치에서 출발</strong>
             <span>출발 지점 기준으로 안전 경로 안내를 시작합니다.</span>
@@ -376,7 +235,7 @@
         </div>
 
         <div class="step">
-          <div class="step-dot step green"></div>
+          <div class="step-dot green"></div>
           <div class="step-text">
             <strong>방향을 유지하며 60m 이동</strong>
             <span>보행 보조가 가능하고, 큰 장애물은 없습니다.</span>
@@ -384,7 +243,7 @@
         </div>
 
         <div class="step">
-          <div class="step-dot step yellow"></div>
+          <div class="step-dot yellow"></div>
           <div class="step-text">
             <strong>우회전 후 40m 직진</strong>
             <span>주의 구간이 있으니 주변을 살피며 이동하세요.</span>
@@ -392,7 +251,7 @@
         </div>
 
         <div class="step">
-          <div class="step-dot step blue"></div>
+          <div class="step-dot blue"></div>
           <div class="step-text">
             <strong id="arrivalText">목적지 도착</strong>
             <span>예상 도착 시간은 약 3분입니다.</span>
@@ -407,21 +266,21 @@
     </div>
   </div>
 
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_JAVASCRIPT_KEY&libraries=services"></script>
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=비공개_API_KEY&libraries=services"></script>
   <script>
-    const params = new URLSearchParams(location.search);
-    const name = params.get("name") || "목적지";
-    const address = params.get("address") || "주소 정보 없음";
-    const x = Number(params.get("x")) || 127.03811;
-    const y = Number(params.get("y")) || 37.56184;
+    const queryParams = new URLSearchParams(location.search);
+    const placeName = queryParams.get("name") || "목적지";
+    const placeAddress = queryParams.get("address") || "주소 정보 없음";
+    const x = Number(queryParams.get("x")) || 127.03811;
+    const y = Number(queryParams.get("y")) || 37.56184;
 
-    document.getElementById("destName").textContent = name;
-    document.getElementById("destAddress").textContent = address;
-    document.getElementById("arrivalText").textContent = `${name} 도착`;
+    document.getElementById("destName").textContent = placeName;
+    document.getElementById("destAddress").textContent = placeAddress;
+    document.getElementById("arrivalText").textContent = `${placeName} 도착`;
 
-    const distance = 100 + (name.length % 5) * 20;
+    const distance = 100 + (placeName.length % 5) * 20;
     const eta = Math.max(1, Math.round(distance / 35));
-    const danger = (name.length % 3) + 1;
+    const danger = (placeName.length % 3) + 1;
 
     document.getElementById("routeEta").textContent = `${eta}분`;
     document.getElementById("routeDistance").textContent = `${distance}m`;
@@ -441,19 +300,18 @@
     });
 
     const infowindow = new kakao.maps.InfoWindow({
-      content: `<div style="padding:8px 12px; font-size:13px;">${name}</div>`,
+      content: `<div style="padding:8px 12px; font-size:13px;">${placeName}</div>`,
     });
 
     infowindow.open(map, marker);
 
     document.getElementById("goReportBtn").addEventListener("click", function () {
-      location.href = `./report.html?${params.toString()}`;
+      location.href = `./report.html?${queryParams.toString()}`;
     });
 
     document.getElementById("favoriteBtn").addEventListener("click", function () {
-      alert(`${name}을(를) 즐겨찾기에 추가하는 기능을 연결하면 됩니다.`);
+      alert(`${placeName}을(를) 즐겨찾기에 추가하는 기능을 연결하면 됩니다.`);
     });
   </script>
 </body>
->>>>>>> 794e803 (init)
 </html>
