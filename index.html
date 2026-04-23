@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -32,43 +33,47 @@
     <div id="resultList" class="result-list hidden"></div>
 
     <!-- 하단 장소 시트 -->
-    <div id="placeSheet" class="bottom-sheet hidden">
-      <div class="sheet-handle"></div>
-      <p class="sheet-label">선택한 목적지</p>
-      <h3 id="placeName">장소명</h3>
-      <p id="placeAddress" class="muted">주소가 여기에 표시됩니다.</p>
+    <<div id="placeSheet" class="bottom-sheet expanded hidden">
+  <div class="sheet-handle" id="sheetHandle"></div>
 
-      <div class="info-cards">
-        <div class="info-card">
-          <strong>3분</strong>
-          <span>예상 시간</span>
-        </div>
-        <div class="info-card">
-          <strong>100m</strong>
-          <span>거리</span>
-        </div>
-        <div class="info-card danger">
-          <strong>2곳</strong>
-          <span>위험 구간</span>
-        </div>
-      </div>
+  <div class="sheet-content">
+    <p class="sheet-label">선택한 목적지</p>
+    <h3 id="placeName">장소명</h3>
+    <p id="placeAddress" class="muted">주소가 여기에 표시됩니다.</p>
 
-      <div class="safety-bar">
-        <div class="safe"></div>
-        <div class="warn"></div>
+    <div class="info-cards">
+      <div class="info-card">
+        <strong>3분</strong>
+        <span>예상 시간</span>
       </div>
-      <div class="safety-labels">
-        <span>안전 20%</span>
-        <span>주의 80%</span>
+      <div class="info-card">
+        <strong>100m</strong>
+        <span>거리</span>
       </div>
-
-      <div class="sheet-actions">
-        <button class="secondary-btn" id="routeListBtn">경로 목록</button>
-        <button class="primary-btn" id="startRouteBtn">안내 시작</button>
+      <div class="info-card danger">
+        <strong>2곳</strong>
+        <span>위험 구간</span>
       </div>
-
-      <button class="report-link-btn" id="reportBtn">제보하기</button>
     </div>
+
+    <div class="safety-bar">
+      <div class="safe"></div>
+      <div class="warn"></div>
+    </div>
+
+    <div class="safety-labels">
+      <span>안전 20%</span>
+      <span>주의 80%</span>
+    </div>
+
+    <div class="sheet-actions">
+      <button class="secondary-btn" id="routeListBtn">경로 목록</button>
+      <button class="primary-btn" id="startRouteBtn">안내 시작</button>
+    </div>
+
+    <button class="report-link-btn" id="reportBtn">제보하기</button>
+  </div>
+</div>
 
     <!-- 하단 네비 -->
     <div class="bottom-nav">
@@ -78,5 +83,7 @@
     </div>
   </div>
 
-  <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d&libraries&libraries=services"></script>
+  <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=비공개_API_KEY&libraries=services"></script>
   <script src="script.js"></script>
+</body>
+</html>
