@@ -63,25 +63,14 @@ startRouteBtn.addEventListener("click", async () => {
   }
 
   try {
-    const res = await fetch("/api/walking-route", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        origin: { x: startPlace.x, y: startPlace.y },
-        destination: { x: endPlace.x, y: endPlace.y },
-      }),
-    });
+    const res = await fetch(
+      `/api/walking-route?ox=${startPlace.x}&oy=${startPlace.y}&dx=${endPlace.x}&dy=${endPlace.y}`
+    );
 
     const data = await res.json();
 
     if (!res.ok || !data.ok) {
-      throw new Error(
-        data.error ||
-        data.message ||
-        `서버 오류 (${res.status})`
-      );
+      throw new Error(data.error || data.message || `서버 오류 (${res.status})`);
     }
 
     drawRoute(data);
@@ -121,9 +110,7 @@ routeListBtn.addEventListener("click", () => {
     return;
   }
 
-  alert(
-    `출발지: ${startPlace.place_name}\n목적지: ${endPlace.place_name}`
-  );
+  alert(`출발지: ${startPlace.place_name}\n목적지: ${endPlace.place_name}`);
 });
 
 function searchPlaces(keyword) {
@@ -216,7 +203,9 @@ function updatePlaceSheet() {
   if (startPlace && endPlace) {
     placeName.textContent = `${startPlace.place_name} → ${endPlace.place_name}`;
     placeAddress.textContent =
-      `출발: ${startPlace.road_address_name || startPlace.address_name || "주소 정보 없음"} / 도착: ${endPlace.road_address_name || endPlace.address_name || "주소 정보 없음"}`;
+      `출발: ${startPlace.road_address_name || startPlace.address_name || "주소 정보 없음"} / 도착: ${
+        endPlace.road_address_name || endPlace.address_name || "주소 정보 없음"
+      }`;
   } else if (startPlace) {
     placeName.textContent = `출발지: ${startPlace.place_name}`;
     placeAddress.textContent =
@@ -310,7 +299,7 @@ function updateRouteInfo(summary) {
   const duration = Number(summary.duration || 0);
 
   const distanceText =
-    distance < 1000 ? `${distance}m` : `${(distance / 1000).toFixed(1)}km`;
+    distance < 1000 ? `${Math.round(distance)}m` : `${(distance / 1000).toFixed(1)}km`;
 
   const minutes = Math.ceil(duration / 60);
   const timeText = minutes > 0 ? `${minutes}분` : "-";
