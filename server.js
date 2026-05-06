@@ -161,11 +161,6 @@ function getDistance(lat1, lng1, lat2, lng2) {
 
 // 서버 실행
 app.listen(PORT, () => {
-<<<<<<< HEAD
   console.log("=== 새 서버 실행 성공 ===");
   console.log(`AccessNav backend running on http://localhost:${PORT}`);
 });
-=======
-  console.log(`🔥 서버 실행: http://localhost:${PORT}`);
-});
->>>>>>> 71aedcb (ORS 수정)

@@ -30,6 +30,13 @@
 
     <!-- 검색 결과 -->
     <div id="resultList" class="result-list hidden"></div>
+    
+    <!-- 필터링 UI, 즐겨찾기, 현재 위치 가져오는 기능 -->
+    <div class="map-control-buttons">
+    <button id="favoriteBtn" class="map-control-btn">⭐</button>
+    <button id="filterBtn" class="map-control-btn">⚙️</button>
+    <button id="currentLocationBtn" class="map-control-btn">📍</button>
+    </div>
 
     <!-- 하단 장소 시트 -->
     <<div id="placeSheet" class="bottom-sheet expanded hidden">
@@ -82,7 +89,7 @@
     </div>
   </div>
 
-  <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=비공개_API_KEY&libraries=services"></script>
+  <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d&libraries=services"></script>
   <script src="script.js"></script>
 </body>
 </html>

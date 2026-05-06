@@ -1,4 +1,5 @@
 const container = document.getElementById("map");
+
 const options = {
   center: new kakao.maps.LatLng(37.56184, 127.03811),
   level: 3,
@@ -14,18 +15,27 @@ let currentPolyline = null;
 let dangerCircles = [];
 let startMarker = null;
 let endMarker = null;
+let currentLocationMarker = null;
+let currentWatchId = null;
 
 const searchInput = document.getElementById("searchInput");
 const searchBtn = document.getElementById("searchBtn");
 const resultList = document.getElementById("resultList");
+
 const placeSheet = document.getElementById("placeSheet");
 const placeName = document.getElementById("placeName");
 const placeAddress = document.getElementById("placeAddress");
+const sheetHandle = document.getElementById("sheetHandle");
+
 const startRouteBtn = document.getElementById("startRouteBtn");
 const reportBtn = document.getElementById("reportBtn");
 const routeListBtn = document.getElementById("routeListBtn");
+
 const chipButtons = document.querySelectorAll(".chip");
-const sheetHandle = document.getElementById("sheetHandle");
+
+const favoriteBtn = document.getElementById("favoriteBtn");
+const filterBtn = document.getElementById("filterBtn");
+const currentLocationBtn = document.getElementById("currentLocationBtn");
 
 if (sheetHandle && placeSheet) {
   sheetHandle.addEventListener("click", () => {
@@ -56,6 +66,22 @@ chipButtons.forEach((chip) => {
   });
 });
 
+if (currentLocationBtn) {
+  currentLocationBtn.addEventListener("click", moveToCurrentLocation);
+}
+
+if (favoriteBtn) {
+  favoriteBtn.addEventListener("click", () => {
+    alert("즐겨찾기 기능은 추후 구현 예정입니다.");
+  });
+}
+
+if (filterBtn) {
+  filterBtn.addEventListener("click", () => {
+    alert("필터 기능은 추후 구현 예정입니다.");
+  });
+}
+
 startRouteBtn.addEventListener("click", async () => {
   if (!startPlace || !endPlace) {
     alert("출발지와 목적지를 모두 선택해주세요.");
@@ -78,10 +104,7 @@ startRouteBtn.addEventListener("click", async () => {
     updateRouteInfo(data.summary || {});
     updateDangerCount(data.dangerCount || 0);
     updatePlaceSheet();
-
-    placeSheet.classList.remove("hidden");
-    placeSheet.classList.remove("collapsed");
-    placeSheet.classList.add("expanded");
+    openPlaceSheet();
   } catch (error) {
     console.error("경로 요청 실패:", error);
     alert(error.message);
@@ -139,7 +162,7 @@ function searchPlaces(keyword) {
 
       kakao.maps.event.addListener(marker, "click", () => {
         selectPlace(place);
-        map.setCenter(position);
+        smoothMoveTo(position);
         hideResultList();
       });
     });
@@ -161,7 +184,7 @@ function renderResultList(places) {
 
     item.addEventListener("click", () => {
       selectPlace(place);
-      map.setCenter(new kakao.maps.LatLng(place.y, place.x));
+      smoothMoveTo(new kakao.maps.LatLng(place.y, place.x));
       hideResultList();
     });
 
@@ -191,10 +214,106 @@ function selectPlace(place) {
   }
 
   updatePlaceSheet();
+  openPlaceSheet();
+}
 
-  placeSheet.classList.remove("hidden");
-  placeSheet.classList.remove("collapsed");
-  placeSheet.classList.add("expanded");
+function moveToCurrentLocation() {
+  if (!navigator.geolocation) {
+    alert("이 브라우저는 현재 위치 기능을 지원하지 않습니다.");
+    return;
+  }
+
+  if (currentWatchId !== null) {
+    navigator.geolocation.clearWatch(currentWatchId);
+  }
+
+  currentWatchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+
+      const currentPosition = new kakao.maps.LatLng(lat, lng);
+
+      startPlace = {
+        place_name: "현재 위치",
+        y: lat,
+        x: lng,
+        road_address_name: "",
+        address_name: "현재 위치에서 출발",
+      };
+
+      smoothMoveTo(currentPosition);
+
+      setTimeout(() => {
+        map.setLevel(3);
+      }, 700);
+
+      updateCurrentLocationMarker(lat, lng);
+      updatePlaceSheet();
+      openPlaceSheet();
+    },
+    () => {
+      alert("현재 위치를 가져올 수 없습니다. 위치 권한을 허용해주세요.");
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    }
+  );
+}
+
+function smoothMoveTo(targetPosition) {
+  const currentCenter = map.getCenter();
+
+  const startLat = currentCenter.getLat();
+  const startLng = currentCenter.getLng();
+  const endLat = targetPosition.getLat();
+  const endLng = targetPosition.getLng();
+
+  const duration = 700;
+  const startTime = performance.now();
+
+  function animate(now) {
+    const progress = Math.min((now - startTime) / duration, 1);
+
+    const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+    const lat = startLat + (endLat - startLat) * easedProgress;
+    const lng = startLng + (endLng - startLng) * easedProgress;
+
+    map.setCenter(new kakao.maps.LatLng(lat, lng));
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+function updateCurrentLocationMarker(lat, lng) {
+  const position = new kakao.maps.LatLng(lat, lng);
+
+  const markerImage = new kakao.maps.MarkerImage(
+    "images/current-location.svg",
+    new kakao.maps.Size(90, 90),
+    {
+      offset: new kakao.maps.Point(45, 45),
+    }
+  );
+
+  if (!currentLocationMarker) {
+    currentLocationMarker = new kakao.maps.Marker({
+      map,
+      position,
+      image: markerImage,
+      title: "현재 위치",
+      zIndex: 20,
+    });
+  } else {
+    currentLocationMarker.setPosition(position);
+  }
 }
 
 function updatePlaceSheet() {
@@ -215,6 +334,12 @@ function updatePlaceSheet() {
     placeAddress.textContent =
       endPlace.road_address_name || endPlace.address_name || "주소 정보 없음";
   }
+}
+
+function openPlaceSheet() {
+  placeSheet.classList.remove("hidden");
+  placeSheet.classList.remove("collapsed");
+  placeSheet.classList.add("expanded");
 }
 
 function updateStartMarker(place) {
@@ -299,7 +424,9 @@ function updateRouteInfo(summary) {
   const duration = Number(summary.duration || 0);
 
   const distanceText =
-    distance < 1000 ? `${Math.round(distance)}m` : `${(distance / 1000).toFixed(1)}km`;
+    distance < 1000
+      ? `${Math.round(distance)}m`
+      : `${(distance / 1000).toFixed(1)}km`;
 
   const minutes = Math.ceil(duration / 60);
   const timeText = minutes > 0 ? `${minutes}분` : "-";
@@ -313,6 +440,7 @@ function updateRouteInfo(summary) {
 
 function updateDangerCount(count) {
   const dangerCard = document.querySelector(".info-card:nth-child(3) strong");
+
   if (dangerCard) {
     dangerCard.innerText = `${count}곳`;
   }
