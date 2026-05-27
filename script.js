@@ -17,6 +17,7 @@ let startMarker = null;
 let endMarker = null;
 let currentLocationMarker = null;
 let currentWatchId = null;
+let kioskMakers = [] ;
 
 const searchInput = document.getElementById("searchInput");
 const searchBtn = document.getElementById("searchBtn");
@@ -36,6 +37,16 @@ const chipButtons = document.querySelectorAll(".chip");
 const favoriteBtn = document.getElementById("favoriteBtn");
 const filterBtn = document.getElementById("filterBtn");
 const currentLocationBtn = document.getElementById("currentLocationBtn");
+const filterPanel = document.getElementById("filterPanel");
+const closeFilterBtn = document.getElementById("closeFilterBtn");
+
+const loginNavBtn = document.getElementById("loginNavBtn");
+
+if (loginNavBtn) {
+  loginNavBtn.addEventListener("click", () => {
+    location.href = "login.html";
+  });
+}
 
 if (sheetHandle && placeSheet) {
   sheetHandle.addEventListener("click", () => {
@@ -76,11 +87,39 @@ if (favoriteBtn) {
   });
 }
 
-if (filterBtn) {
+if (filterBtn && filterPanel) {
   filterBtn.addEventListener("click", () => {
-    alert("필터 기능은 추후 구현 예정입니다.");
+    filterPanel.classList.remove("hidden");
+    map.relayout();
   });
 }
+
+if (closeFilterBtn && filterPanel) {
+  closeFilterBtn.addEventListener("click", () => {
+    filterPanel.classList.add("hidden");
+  });
+}
+
+if (filterPanel) {
+  filterPanel.addEventListener("click", (event) => {
+    if (event.target === filterPanel) {
+      filterPanel.classList.add("hidden");
+    }
+  });
+}
+
+document.querySelectorAll("#filterPanel input[type='checkbox']").forEach((checkbox) => {
+  checkbox.addEventListener("change", () => {
+    if (checkbox.dataset.filter === "barrier_free_kiosk") {
+      if (checkbox.checked) {
+        loadBarrierFreeKiosks();
+      } else {
+        clearKioskMarkers();
+      }
+    }
+  });
+});
+
 
 startRouteBtn.addEventListener("click", async () => {
   if (!startPlace || !endPlace) {
@@ -418,6 +457,60 @@ function drawDangerZones(zones) {
     dangerCircles.push(circle);
   });
 }
+
+//키오스크 API 관련
+async function loadBarrierFreeKiosks() {
+  try {
+    const res = await fetch(
+  "/api/barrier-free-kiosks?query=서울특별시&page=1&size=100"
+);
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "키오스크 정보를 불러오지 못했습니다.");
+    }
+
+    drawKioskMarkers(data.items || []);
+  } catch (error) {
+    console.error("키오스크 마커 로딩 실패:", error);
+    alert(error.message);
+  }
+}
+
+function drawKioskMarkers(items) {
+  clearKioskMarkers();
+
+  items.forEach((item) => {
+    const position = new kakao.maps.LatLng(item.lat, item.lng);
+
+    const marker = new kakao.maps.Marker({
+      map,
+      position,
+      title: item.name,
+    });
+
+    const infoWindow = new kakao.maps.InfoWindow({
+      content: `
+        <div style="padding:8px 10px; font-size:13px; line-height:1.4;">
+          <strong>${item.name}</strong><br />
+          <span>${item.address || "주소 정보 없음"}</span>
+        </div>
+      `,
+    });
+
+    kakao.maps.event.addListener(marker, "click", () => {
+      infoWindow.open(map, marker);
+    });
+
+    kioskMarkers.push(marker);
+  });
+}
+
+function clearKioskMarkers() {
+  kioskMarkers.forEach((marker) => marker.setMap(null));
+  kioskMarkers = [];
+}
+
 
 function updateRouteInfo(summary) {
   const distance = Number(summary.distance || 0);

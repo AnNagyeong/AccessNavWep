@@ -38,6 +38,50 @@
     <button id="currentLocationBtn" class="map-control-btn">📍</button>
     </div>
 
+    <!-- 필터 패널 -->
+    <div id="filterPanel" class="filter-panel hidden">
+  <div class="filter-map-preview"></div>
+
+  <aside class="filter-sheet">
+    <div class="filter-header">
+      <h2>옵션 필터</h2>
+      <button type="button" id="closeFilterBtn" class="filter-close-btn">×</button>
+    </div>
+
+    <div class="filter-options">
+      <label class="filter-option">
+        <span>장애인 화장실</span>
+        <input type="checkbox" data-filter="disabled_toilet" />
+        <span class="toggle-ui"></span>
+      </label>
+
+      <label class="filter-option">
+        <span>배리어프리 매장</span>
+        <input type="checkbox" data-filter="barrier_free_kiosk" />
+        <span class="toggle-ui"></span>
+      </label>
+
+      <label class="filter-option">
+        <span>엘리베이터</span>
+        <input type="checkbox" data-filter="elevator" />
+        <span class="toggle-ui"></span>
+      </label>
+
+      <label class="filter-option">
+        <span>장애인 전용 주차장</span>
+        <input type="checkbox" data-filter="disabled_parking" />
+        <span class="toggle-ui"></span>
+      </label>
+
+      <label class="filter-option">
+        <span>버스 정류장</span>
+        <input type="checkbox" data-filter="bus_stop" />
+        <span class="toggle-ui"></span>
+      </label>
+    </div>
+  </aside>
+</div>
+
     <!-- 하단 장소 시트 -->
     <<div id="placeSheet" class="bottom-sheet expanded hidden">
   <div class="sheet-handle" id="sheetHandle"></div>
@@ -88,6 +132,13 @@
       <div class="nav-item">⚙️</div>
     </div>
   </div>
+
+  <!-- 로그인 페이지 관련 -->
+  <div class="bottom-nav">
+  <button class="nav-item active" type="button">⌂</button>
+  <button class="nav-item" type="button">▦</button>
+  <button class="nav-item" type="button" id="loginNavBtn">👤</button>
+</div>
 
   <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d&libraries=services"></script>
   <script src="script.js"></script>

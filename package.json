@@ -2,6 +2,8 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "node-fetch": "^3.3.2"
+    "mysql2": "^3.22.3",
+    "node-fetch": "^3.3.2",
+    "uuid": "^14.0.0"
   }
 }
