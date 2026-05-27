@@ -252,7 +252,7 @@
     const params = new URLSearchParams(location.search);
 
     const placeName = params.get("name") || "선택 장소";
-    const address = params.get("address") || "주소 정보 없음";
+    const address = params.get("address") || "";
     const x = Number(params.get("x")) || 127.03811;
     const y = Number(params.get("y")) || 37.56184;
 

@@ -41,11 +41,23 @@ const filterPanel = document.getElementById("filterPanel");
 const closeFilterBtn = document.getElementById("closeFilterBtn");
 
 const loginNavBtn = document.getElementById("loginNavBtn");
+const cameraNavBtn = document.getElementById("cameraNavBtn");
+const bookmarkNavBtn = document.getElementById("bookmarkNavBtn");
 
 if (loginNavBtn) {
   loginNavBtn.addEventListener("click", () => {
-    location.href = "login.html";
+    location.href = "mypage.html";
   });
+}
+
+if (cameraNavBtn) {
+  cameraNavBtn.addEventListener("click", () => {
+    location.href = "report.html";
+  });
+}
+
+if (bookmarkNavBtn) {
+  bookmarkNavBtn.addEventListener("click", openFavoritesPage);
 }
 
 if (sheetHandle && placeSheet) {
@@ -82,9 +94,11 @@ if (currentLocationBtn) {
 }
 
 if (favoriteBtn) {
-  favoriteBtn.addEventListener("click", () => {
-    alert("즐겨찾기 기능은 추후 구현 예정입니다.");
-  });
+  favoriteBtn.addEventListener("click", openFavoritesPage);
+}
+
+function openFavoritesPage() {
+  location.href = "favorites.html";
 }
 
 if (filterBtn && filterPanel) {
@@ -150,7 +164,9 @@ startRouteBtn.addEventListener("click", async () => {
   }
 });
 
-reportBtn.addEventListener("click", () => {
+reportBtn.addEventListener("click", openReportPage);
+
+function openReportPage() {
   const targetPlace = endPlace || startPlace;
 
   if (!targetPlace) {
@@ -164,7 +180,7 @@ reportBtn.addEventListener("click", () => {
       targetPlace.road_address_name || targetPlace.address_name || ""
     )}` +
     `&x=${targetPlace.x}&y=${targetPlace.y}`;
-});
+}
 
 routeListBtn.addEventListener("click", () => {
   if (!startPlace || !endPlace) {

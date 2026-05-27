@@ -126,19 +126,38 @@
 </div>
 
     <!-- 하단 네비 -->
-    <div class="bottom-nav">
-      <div class="nav-item active">🏠</div>
-      <div class="nav-item">⭐</div>
-      <div class="nav-item">⚙️</div>
-    </div>
+    <nav class="bottom-nav" aria-label="하단 내비게이션">
+      <button class="nav-item active" type="button" aria-label="홈">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 11.5 12 4l9 7.5" />
+          <path d="M5.5 10.5V21h13V10.5" />
+        </svg>
+      </button>
+      <button class="nav-item" type="button" aria-label="주변 장소">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 21s6-5.3 6-11a6 6 0 0 0-12 0c0 5.7 6 11 6 11Z" />
+          <circle cx="12" cy="10" r="2.5" />
+        </svg>
+      </button>
+      <button class="nav-item" type="button" id="cameraNavBtn" aria-label="위험 구간 제보">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8h4l1.5-2h5L16 8h4v11H4Z" />
+          <circle cx="12" cy="13.5" r="3.5" />
+        </svg>
+      </button>
+      <button class="nav-item" type="button" id="bookmarkNavBtn" aria-label="즐겨찾기">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 4h12v17l-6-3.5L6 21Z" />
+        </svg>
+      </button>
+      <button class="nav-item" type="button" id="loginNavBtn" aria-label="마이 페이지">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+        </svg>
+      </button>
+    </nav>
   </div>
-
-  <!-- 로그인 페이지 관련 -->
-  <div class="bottom-nav">
-  <button class="nav-item active" type="button">⌂</button>
-  <button class="nav-item" type="button">▦</button>
-  <button class="nav-item" type="button" id="loginNavBtn">👤</button>
-</div>
 
   <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d&libraries=services"></script>
   <script src="script.js"></script>
