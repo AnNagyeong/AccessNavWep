@@ -17,7 +17,7 @@ let startMarker = null;
 let endMarker = null;
 let currentLocationMarker = null;
 let currentWatchId = null;
-let kioskMakers = [] ;
+let kioskMarkers = [];
 
 const searchInput = document.getElementById("searchInput");
 const searchBtn = document.getElementById("searchBtn");
@@ -29,7 +29,6 @@ const placeAddress = document.getElementById("placeAddress");
 const sheetHandle = document.getElementById("sheetHandle");
 
 const startRouteBtn = document.getElementById("startRouteBtn");
-const reportBtn = document.getElementById("reportBtn");
 const routeListBtn = document.getElementById("routeListBtn");
 
 const chipButtons = document.querySelectorAll(".chip");
@@ -135,36 +134,27 @@ document.querySelectorAll("#filterPanel input[type='checkbox']").forEach((checkb
 });
 
 
-startRouteBtn.addEventListener("click", async () => {
-  if (!startPlace || !endPlace) {
-    alert("출발지와 목적지를 모두 선택해주세요.");
-    return;
-  }
-
-  try {
-    const res = await fetch(
-      `/api/walking-route?ox=${startPlace.x}&oy=${startPlace.y}&dx=${endPlace.x}&dy=${endPlace.y}`
-    );
-
-    const data = await res.json();
-
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || data.message || `서버 오류 (${res.status})`);
+if (routeListBtn) {
+  routeListBtn.addEventListener("click", () => {
+    if (!startPlace || !endPlace) {
+      alert("출발지와 목적지를 모두 선택해주세요.");
+      return;
     }
 
-    drawRoute(data);
-    drawDangerZones(data.dangerZones || []);
-    updateRouteInfo(data.summary || {});
-    updateDangerCount(data.dangerCount || 0);
-    updatePlaceSheet();
-    openPlaceSheet();
-  } catch (error) {
-    console.error("경로 요청 실패:", error);
-    alert(error.message);
-  }
-});
+    location.href = `route-list.html?${routeQueryParams()}`;
+  });
+}
 
-reportBtn.addEventListener("click", openReportPage);
+if (startRouteBtn) {
+  startRouteBtn.addEventListener("click", () => {
+    if (!startPlace || !endPlace) {
+      alert("출발지와 목적지를 모두 선택해주세요.");
+      return;
+    }
+
+    location.href = `guidance.html?${routeQueryParams()}`;
+  });
+}
 
 function openReportPage() {
   const targetPlace = endPlace || startPlace;
@@ -182,15 +172,6 @@ function openReportPage() {
     `&x=${targetPlace.x}&y=${targetPlace.y}`;
 }
 
-routeListBtn.addEventListener("click", () => {
-  if (!startPlace || !endPlace) {
-    alert("출발지와 목적지를 모두 선택해주세요.");
-    return;
-  }
-
-  alert(`출발지: ${startPlace.place_name}\n목적지: ${endPlace.place_name}`);
-});
-
 function searchPlaces(keyword) {
   placesService.keywordSearch(keyword, (data, status) => {
     if (status !== kakao.maps.services.Status.OK) {
@@ -199,30 +180,7 @@ function searchPlaces(keyword) {
       return;
     }
 
-    clearSearchMarkers();
     renderResultList(data);
-
-    const bounds = new kakao.maps.LatLngBounds();
-
-    data.forEach((place) => {
-      const position = new kakao.maps.LatLng(place.y, place.x);
-
-      const marker = new kakao.maps.Marker({
-        map,
-        position,
-      });
-
-      markers.push(marker);
-      bounds.extend(position);
-
-      kakao.maps.event.addListener(marker, "click", () => {
-        selectPlace(place);
-        smoothMoveTo(position);
-        hideResultList();
-      });
-    });
-
-    map.setBounds(bounds);
   });
 }
 
@@ -261,15 +219,30 @@ function selectPlace(place) {
   } else if (!endPlace) {
     endPlace = place;
     updateEndMarker(place);
-    alert(`목적지 설정: ${place.place_name}`);
+    document.body.classList.add("route-mode");
   } else {
     endPlace = place;
     updateEndMarker(place);
-    alert(`목적지 변경: ${place.place_name}`);
+    document.body.classList.add("route-mode");
   }
 
   updatePlaceSheet();
   openPlaceSheet();
+}
+
+function routeQueryParams() {
+  const params = new URLSearchParams({
+    startName: startPlace.place_name,
+    startAddress: startPlace.road_address_name || startPlace.address_name || "",
+    startX: startPlace.x,
+    startY: startPlace.y,
+    name: endPlace.place_name,
+    address: endPlace.road_address_name || endPlace.address_name || "",
+    x: endPlace.x,
+    y: endPlace.y,
+  });
+
+  return params.toString();
 }
 
 function moveToCurrentLocation() {
@@ -375,11 +348,8 @@ function updatePlaceSheet() {
   if (!startPlace && !endPlace) return;
 
   if (startPlace && endPlace) {
-    placeName.textContent = `${startPlace.place_name} → ${endPlace.place_name}`;
-    placeAddress.textContent =
-      `출발: ${startPlace.road_address_name || startPlace.address_name || "주소 정보 없음"} / 도착: ${
-        endPlace.road_address_name || endPlace.address_name || "주소 정보 없음"
-      }`;
+    placeName.textContent = `${endPlace.place_name}까지`;
+    placeAddress.textContent = "";
   } else if (startPlace) {
     placeName.textContent = `출발지: ${startPlace.place_name}`;
     placeAddress.textContent =

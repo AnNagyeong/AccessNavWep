@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>경로 안내</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background: #fff; }
+    .guidance-page { min-height: 100vh; background: #fff; color: #222; padding: 0 28px 28px 6px; }
+    .guidance-header { height: 58px; display: flex; align-items: center; gap: 2px; }
+    .guidance-back { width: 40px; height: 40px; border: 0; background: transparent; color: #222; font-size: 28px; cursor: pointer; }
+    .guidance-header h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    .guidance-steps { display: grid; max-width: 580px; margin-top: 2px; }
+    .guidance-step { display: grid; grid-template-columns: 42px 1fr; min-height: 70px; }
+    .step-rail { position: relative; display: flex; justify-content: center; }
+    .step-rail::before { content: ""; position: absolute; top: 0; bottom: 0; width: 2px; background: #dadada; }
+    .guidance-step:last-child .step-rail::before { display: none; }
+    .big-dot { position: relative; z-index: 1; width: 42px; height: 42px; border-radius: 50%; background: #f26a6a; }
+    .guidance-step.green .big-dot { background: #49d11a; }
+    .guidance-step.yellow .big-dot { background: #ffbd33; }
+    .guidance-step.blue .big-dot { background: #5aa7ff; }
+    .step-copy { padding: 9px 0 0 12px; }
+    .step-copy h2 { margin: 0; font-size: 13px; line-height: 1.35; }
+    .step-copy p { margin: 1px 0 0; color: #777; font-size: 10px; }
+    .guidance-actions { display: flex; gap: 12px; max-width: 580px; margin-top: 28px; }
+    .guidance-actions button { flex: 1; height: 46px; border: 0; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; }
+    .guidance-report { background: #eee; color: #222; }
+    .guidance-favorite { background: #ffbd33; color: #fff; }
+    @media (min-width: 1024px) {
+      .guidance-page { width: min(720px, calc(100vw - 96px)); margin: 0 auto; padding-top: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="guidance-page">
+    <header class="guidance-header">
+      <button class="guidance-back" type="button" aria-label="뒤로가기" onclick="history.back()">←</button>
+      <h1>경로 안내</h1>
+    </header>
+
+    <section class="guidance-steps" aria-label="경로 안내 단계">
+      <article class="guidance-step">
+        <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
+        <div class="step-copy">
+          <h2 id="startText">출발지에서 출발</h2>
+          <p>남쪽으로 이동</p>
+        </div>
+      </article>
+      <article class="guidance-step green">
+        <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
+        <div class="step-copy">
+          <h2>방향을 유지하며 60m 이동</h2>
+          <p>넓은 보도, 장애물 없음</p>
+        </div>
+      </article>
+      <article class="guidance-step yellow">
+        <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
+        <div class="step-copy">
+          <h2>우회전 후 40m 직진</h2>
+          <p>약간의 경사 / 주의하여 이동</p>
+        </div>
+      </article>
+      <article class="guidance-step blue">
+        <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
+        <div class="step-copy">
+          <h2 id="arrivalText">목적지 도착</h2>
+          <p>약 3분 소요</p>
+        </div>
+      </article>
+    </section>
+
+    <div class="guidance-actions">
+      <button class="guidance-report" id="reportBtn" type="button">제보하기</button>
+      <button class="guidance-favorite" id="favoriteBtn" type="button">즐겨찾기</button>
+    </div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const startName = params.get("startName") || "한양여자대학교 디자인관 쪽문";
+    const destination = params.get("name") || "한양여자대학교 도서관";
+    document.getElementById("startText").textContent = `${startName}에서 출발`;
+    document.getElementById("arrivalText").textContent = `${destination} 도착`;
+    document.getElementById("reportBtn").addEventListener("click", () => {
+      location.href = `report.html?${params.toString()}`;
+    });
+    document.getElementById("favoriteBtn").addEventListener("click", () => {
+      location.href = "favorites.html";
+    });
+  </script>
+</body>
+</html>
