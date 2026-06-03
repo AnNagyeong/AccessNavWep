@@ -16,7 +16,9 @@
     .route-option {
       display: grid; grid-template-columns: 6px 1fr; gap: 12px; align-items: center;
       min-height: 76px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; padding: 14px;
+      text-align: left; cursor: pointer;
     }
+    .route-option.selected { border-color: #49d11a; box-shadow: 0 0 0 2px rgba(73, 209, 26, 0.14); }
     .route-option-bar { width: 6px; height: 48px; background: #49d11a; }
     .route-option.danger .route-option-bar { background: #f26a6a; }
     .route-option h2 { margin: 0 0 6px; font-size: 14px; }
@@ -25,6 +27,7 @@
       position: fixed; left: 28px; right: 28px; bottom: 22px; max-width: 720px; height: 54px;
       border: 0; border-radius: 8px; background: #49d11a; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
     }
+    .route-start-fixed:disabled { background: #cfcfcf; cursor: default; }
     @media (min-width: 1024px) {
       .route-list-page { width: min(1120px, calc(100vw - 96px)); margin: 0 auto; padding-top: 28px; }
       .route-start-fixed { left: calc((100vw - min(1120px, calc(100vw - 96px))) / 2 + 28px); right: auto; width: 320px; }
@@ -34,39 +37,73 @@
 <body>
   <main class="route-list-page">
     <header class="route-list-header">
-      <button class="route-list-back" type="button" aria-label="뒤로가기" onclick="history.back()">←</button>
+      <button class="route-list-back" type="button" aria-label="뒤로가기" onclick="history.back()">‹</button>
       <h1>경로 목록</h1>
     </header>
 
-    <p class="route-list-summary" id="routeSummary">추천 경로 2개</p>
-
-    <section class="route-options" aria-label="추천 경로">
-      <article class="route-option">
-        <div class="route-option-bar" aria-hidden="true"></div>
-        <div>
-          <h2 id="safeRouteTitle">추천 경로</h2>
-          <p>3분 · 100m · 안전 구간 20%, 주의 구간 80%</p>
-        </div>
-      </article>
-      <article class="route-option danger">
-        <div class="route-option-bar" aria-hidden="true"></div>
-        <div>
-          <h2 id="shortRouteTitle">최단 경로</h2>
-          <p>2분 · 90m · 위험 구간 2곳 포함</p>
-        </div>
-      </article>
-    </section>
-
-    <button class="route-start-fixed" type="button" id="startGuidanceBtn">안내 시작</button>
+    <p class="route-list-summary" id="routeSummary">경로를 불러오는 중...</p>
+    <section class="route-options" id="routeOptions" aria-label="추천 경로"></section>
+    <button class="route-start-fixed" type="button" id="startGuidanceBtn" disabled>안내 시작</button>
   </main>
 
   <script>
     const params = new URLSearchParams(location.search);
-    const destination = params.get("name") || "목적지";
-    document.getElementById("routeSummary").textContent = `${destination}까지 추천 경로 2개`;
-    document.getElementById("safeRouteTitle").textContent = `${destination} 정문 경로`;
-    document.getElementById("shortRouteTitle").textContent = `${destination} 최단 경로`;
-    document.getElementById("startGuidanceBtn").addEventListener("click", () => {
+    const routeOptions = document.getElementById("routeOptions");
+    const routeSummary = document.getElementById("routeSummary");
+    const startGuidanceBtn = document.getElementById("startGuidanceBtn");
+    let selectedRouteId = null;
+
+    loadRoutes();
+
+    async function loadRoutes() {
+      try {
+        const response = await fetch(`/api/access-routes?${params.toString()}`);
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "경로를 불러오지 못했습니다.");
+        }
+
+        routeSummary.textContent = `${data.destination.name}까지 추천 경로 ${data.routes.length}개`;
+        renderRoutes(data.routes);
+      } catch (error) {
+        routeSummary.textContent = error.message;
+        startGuidanceBtn.disabled = true;
+      }
+    }
+
+    function renderRoutes(routes) {
+      routeOptions.innerHTML = "";
+      selectedRouteId = routes[0]?.id || null;
+
+      routes.forEach((route) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `route-option ${route.dangerCount ? "danger" : ""} ${route.id === selectedRouteId ? "selected" : ""}`;
+        button.dataset.routeId = route.id;
+        button.innerHTML = `
+          <div class="route-option-bar" aria-hidden="true"></div>
+          <div>
+            <h2>${route.title}</h2>
+            <p>${route.duration}분 · ${route.distance}m · 계단 ${route.features.stairs}개 · 경사로 ${route.features.ramps}개 · 횡단보도 ${route.features.crosswalks}개</p>
+          </div>
+        `;
+
+        button.addEventListener("click", () => {
+          selectedRouteId = route.id;
+          document.querySelectorAll(".route-option").forEach((option) => {
+            option.classList.toggle("selected", option.dataset.routeId === selectedRouteId);
+          });
+        });
+
+        routeOptions.appendChild(button);
+      });
+
+      startGuidanceBtn.disabled = !selectedRouteId;
+    }
+
+    startGuidanceBtn.addEventListener("click", () => {
+      params.set("routeType", selectedRouteId || "accessible");
       location.href = `guidance.html?${params.toString()}`;
     });
   </script>

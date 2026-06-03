@@ -18,6 +18,14 @@ let endMarker = null;
 let currentLocationMarker = null;
 let currentWatchId = null;
 let kioskMarkers = [];
+let nearbyInfoWindow = null;
+let currentLocationPosition = null;
+
+const NEARBY_SEARCH_RADIUS = 100;
+const NEARBY_CATEGORY_CODES = {
+  "편의점": "CS2",
+  "카페": "CE7",
+};
 
 const searchInput = document.getElementById("searchInput");
 const searchBtn = document.getElementById("searchBtn");
@@ -84,7 +92,7 @@ chipButtons.forEach((chip) => {
   chip.addEventListener("click", () => {
     const keyword = chip.dataset.keyword;
     searchInput.value = keyword;
-    searchPlaces(keyword);
+    searchNearbyPlaces(keyword);
   });
 });
 
@@ -182,6 +190,106 @@ function searchPlaces(keyword) {
 
     renderResultList(data);
   });
+}
+
+function searchNearbyPlaces(keyword) {
+  if (currentLocationPosition) {
+    searchNearbyPlacesFromPosition(keyword, currentLocationPosition);
+    return;
+  }
+
+  if (!navigator.geolocation) {
+    alert("현재 위치 기능을 지원하지 않는 브라우저입니다.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const currentPosition = new kakao.maps.LatLng(lat, lng);
+
+      searchNearbyPlacesFromPosition(keyword, currentPosition);
+    },
+    () => {
+      alert("현재 위치를 가져올 수 없습니다. 위치 권한을 허용해주세요.");
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    }
+  );
+}
+
+function searchNearbyPlacesFromPosition(keyword, currentPosition) {
+  updateCurrentLocationMarker(currentPosition.getLat(), currentPosition.getLng());
+  smoothMoveTo(currentPosition);
+
+  const options = {
+    location: currentPosition,
+    radius: NEARBY_SEARCH_RADIUS,
+    sort: kakao.maps.services.SortBy.DISTANCE,
+  };
+
+  const callback = (data, status) => {
+    clearSearchMarkers();
+    hideResultList();
+
+    if (status !== kakao.maps.services.Status.OK || data.length === 0) {
+      alert(`현재 위치 100m 안에 ${keyword} 검색 결과가 없습니다.`);
+      return;
+    }
+
+    drawNearbyPlaceMarkers(data);
+  };
+
+  const categoryCode = NEARBY_CATEGORY_CODES[keyword];
+
+  if (categoryCode) {
+    placesService.categorySearch(categoryCode, callback, options);
+  } else {
+    placesService.keywordSearch(keyword, callback, options);
+  }
+}
+
+function drawNearbyPlaceMarkers(places) {
+  const bounds = new kakao.maps.LatLngBounds();
+
+  if (currentLocationMarker) {
+    bounds.extend(currentLocationMarker.getPosition());
+  }
+
+  places.forEach((place) => {
+    const position = new kakao.maps.LatLng(place.y, place.x);
+    const marker = new kakao.maps.Marker({
+      map,
+      position,
+      title: place.place_name,
+    });
+
+    kakao.maps.event.addListener(marker, "click", () => {
+      if (nearbyInfoWindow) {
+        nearbyInfoWindow.close();
+      }
+
+      nearbyInfoWindow = new kakao.maps.InfoWindow({
+        content: `
+          <div style="padding:8px 10px; font-size:13px; line-height:1.4;">
+            <strong>${place.place_name}</strong><br />
+            <span>${place.road_address_name || place.address_name || "주소 정보 없음"}</span>
+          </div>
+        `,
+      });
+
+      nearbyInfoWindow.open(map, marker);
+    });
+
+    markers.push(marker);
+    bounds.extend(position);
+  });
+
+  map.setBounds(bounds);
 }
 
 function renderResultList(places) {
@@ -322,6 +430,7 @@ function smoothMoveTo(targetPosition) {
 
 function updateCurrentLocationMarker(lat, lng) {
   const position = new kakao.maps.LatLng(lat, lng);
+  currentLocationPosition = position;
 
   const markerImage = new kakao.maps.MarkerImage(
     "images/current-location.svg",
@@ -526,6 +635,11 @@ function updateDangerCount(count) {
 }
 
 function clearSearchMarkers() {
+  if (nearbyInfoWindow) {
+    nearbyInfoWindow.close();
+    nearbyInfoWindow = null;
+  }
+
   markers.forEach((marker) => marker.setMap(null));
   markers = [];
 }

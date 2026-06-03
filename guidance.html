@@ -11,6 +11,7 @@
     .guidance-header { height: 58px; display: flex; align-items: center; gap: 2px; }
     .guidance-back { width: 40px; height: 40px; border: 0; background: transparent; color: #222; font-size: 28px; cursor: pointer; }
     .guidance-header h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    .guidance-summary { margin: 4px 0 14px 54px; color: #666; font-size: 12px; }
     .guidance-steps { display: grid; max-width: 580px; margin-top: 2px; }
     .guidance-step { display: grid; grid-template-columns: 42px 1fr; min-height: 70px; }
     .step-rail { position: relative; display: flex; justify-content: center; }
@@ -23,7 +24,7 @@
     .step-copy { padding: 9px 0 0 12px; }
     .step-copy h2 { margin: 0; font-size: 13px; line-height: 1.35; }
     .step-copy p { margin: 1px 0 0; color: #777; font-size: 10px; }
-    .guidance-actions { display: flex; gap: 12px; max-width: 580px; margin-top: 28px; }
+    .guidance-actions { display: flex; gap: 12px; max-width: 580px; margin-top: 28px; padding-left: 42px; }
     .guidance-actions button { flex: 1; height: 46px; border: 0; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; }
     .guidance-report { background: #eee; color: #222; }
     .guidance-favorite { background: #ffbd33; color: #fff; }
@@ -35,40 +36,12 @@
 <body>
   <main class="guidance-page">
     <header class="guidance-header">
-      <button class="guidance-back" type="button" aria-label="뒤로가기" onclick="history.back()">←</button>
+      <button class="guidance-back" type="button" aria-label="뒤로가기" onclick="history.back()">‹</button>
       <h1>경로 안내</h1>
     </header>
 
-    <section class="guidance-steps" aria-label="경로 안내 단계">
-      <article class="guidance-step">
-        <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
-        <div class="step-copy">
-          <h2 id="startText">출발지에서 출발</h2>
-          <p>남쪽으로 이동</p>
-        </div>
-      </article>
-      <article class="guidance-step green">
-        <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
-        <div class="step-copy">
-          <h2>방향을 유지하며 60m 이동</h2>
-          <p>넓은 보도, 장애물 없음</p>
-        </div>
-      </article>
-      <article class="guidance-step yellow">
-        <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
-        <div class="step-copy">
-          <h2>우회전 후 40m 직진</h2>
-          <p>약간의 경사 / 주의하여 이동</p>
-        </div>
-      </article>
-      <article class="guidance-step blue">
-        <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
-        <div class="step-copy">
-          <h2 id="arrivalText">목적지 도착</h2>
-          <p>약 3분 소요</p>
-        </div>
-      </article>
-    </section>
+    <p class="guidance-summary" id="guidanceSummary">경로를 불러오는 중...</p>
+    <section class="guidance-steps" id="guidanceSteps" aria-label="경로 안내 단계"></section>
 
     <div class="guidance-actions">
       <button class="guidance-report" id="reportBtn" type="button">제보하기</button>
@@ -78,13 +51,79 @@
 
   <script>
     const params = new URLSearchParams(location.search);
-    const startName = params.get("startName") || "한양여자대학교 디자인관 쪽문";
-    const destination = params.get("name") || "한양여자대학교 도서관";
-    document.getElementById("startText").textContent = `${startName}에서 출발`;
-    document.getElementById("arrivalText").textContent = `${destination} 도착`;
+    const routeType = params.get("routeType") || "accessible";
+    const guidanceSummary = document.getElementById("guidanceSummary");
+    const guidanceSteps = document.getElementById("guidanceSteps");
+
+    loadGuidance();
+
+    async function loadGuidance() {
+      try {
+        const response = await fetch(`/api/access-routes?${params.toString()}`);
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "경로를 불러오지 못했습니다.");
+        }
+
+        const route = data.routes.find((item) => item.id === routeType) || data.routes[0];
+        guidanceSummary.textContent = `${data.start.name}에서 ${data.destination.name}까지 · ${route.duration}분 · ${route.distance}m`;
+        renderSteps(route.path, data.destination.name);
+      } catch (error) {
+        guidanceSummary.textContent = error.message;
+        guidanceSteps.innerHTML = "";
+      }
+    }
+
+    function renderSteps(path, destinationName) {
+      guidanceSteps.innerHTML = "";
+
+      path.forEach((node, index) => {
+        const isStart = index === 0;
+        const isEnd = index === path.length - 1;
+        const typeClass = isStart ? "blue" : isEnd ? "green" : typeToClass(node.type);
+        const label = isStart
+          ? "출발"
+          : isEnd
+            ? `${destinationName} 도착`
+            : node.name;
+
+        const article = document.createElement("article");
+        article.className = `guidance-step ${typeClass}`;
+        article.innerHTML = `
+          <div class="step-rail"><span class="big-dot" aria-hidden="true"></span></div>
+          <div class="step-copy">
+            <h2>${label}</h2>
+            <p>${typeToText(node.type)}</p>
+          </div>
+        `;
+        guidanceSteps.appendChild(article);
+      });
+    }
+
+    function typeToClass(type) {
+      if (type === "stair") return "";
+      if (type === "ramp" || type === "elevator") return "green";
+      if (type === "crosswalk") return "yellow";
+      return "blue";
+    }
+
+    function typeToText(type) {
+      const labels = {
+        entrance: "건물 출입구",
+        crosswalk: "횡단보도",
+        ramp: "경사로",
+        stair: "계단 구간",
+        elevator: "엘리베이터",
+        path: "보행 경로",
+      };
+      return labels[type] || "보행 경로";
+    }
+
     document.getElementById("reportBtn").addEventListener("click", () => {
       location.href = `report.html?${params.toString()}`;
     });
+
     document.getElementById("favoriteBtn").addEventListener("click", () => {
       location.href = "favorites.html";
     });

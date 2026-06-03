@@ -25,7 +25,7 @@ const db = mysql.createPool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  password: process.env.DB_PASSWORD || process.env.DB_PASS,
   database: process.env.DB_NAME,
 });
 
@@ -392,6 +392,8 @@ app.use(express.static(__dirname));
 // ================= API 404 처리 =================
 // API 주소가 잘못됐을 때 HTML 대신 JSON으로 응답
 
+app.get("/api/access-routes", handleAccessRoutes);
+
 app.use("/api", (req, res) => {
   res.status(404).json({
     ok: false,
@@ -407,3 +409,306 @@ app.listen(PORT, () => {
   console.log("등록 확인: GET  /api/test");
   console.log("등록 확인: POST /api/test-users");
 });
+
+async function handleAccessRoutes(req, res) {
+  try {
+    const startName = req.query.startName || req.query.from || "";
+    const destinationName = req.query.name || req.query.to || "";
+    const startPoint = toPoint(req.query.startY, req.query.startX);
+    const destinationPoint = toPoint(req.query.y, req.query.x);
+
+    const graphData = await loadMapServiceGraph();
+    const startBuilding = findBuilding(graphData.buildings, startName, startPoint);
+    const destinationBuilding = findBuilding(
+      graphData.buildings,
+      destinationName,
+      destinationPoint
+    );
+
+    if (!startBuilding || !destinationBuilding) {
+      return res.status(404).json({
+        ok: false,
+        error: "출발지 또는 목적지를 MapService 건물 데이터에서 찾을 수 없습니다.",
+        buildings: graphData.buildings.map((building) => building.name),
+      });
+    }
+
+    if (startBuilding.id === destinationBuilding.id) {
+      return res.status(400).json({
+        ok: false,
+        error: "출발지와 목적지가 같습니다.",
+      });
+    }
+
+    const shortest = findBuildingPath(
+      startBuilding,
+      destinationBuilding,
+      graphData,
+      { avoidStairs: false }
+    );
+    const accessible = findBuildingPath(
+      startBuilding,
+      destinationBuilding,
+      graphData,
+      { avoidStairs: true }
+    );
+
+    const routes = [
+      formatAccessRoute("accessible", "추천 경로", accessible, graphData),
+      formatAccessRoute("shortest", "최단 경로", shortest, graphData),
+    ].filter(Boolean);
+
+    if (!routes.length) {
+      return res.status(404).json({
+        ok: false,
+        error: "사용 가능한 경로가 없습니다.",
+      });
+    }
+
+    res.json({
+      ok: true,
+      start: summarizeBuilding(startBuilding),
+      destination: summarizeBuilding(destinationBuilding),
+      routes,
+    });
+  } catch (error) {
+    console.error("Access route error:", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
+async function loadMapServiceGraph() {
+  const [nodes] = await db.execute(
+    `
+    SELECT poi_id as id, poi_name as name,
+      latitude as lat, longitude as lng, poi_type as type
+    FROM poi
+    WHERE poi_type != 'building'
+    `
+  );
+
+  const [buildingRows] = await db.execute(
+    `
+    SELECT p.poi_id as id, p.poi_name as name,
+      p.latitude as lat, p.longitude as lng, p.poi_type as type,
+      be.entrance_poi_id
+    FROM poi p
+    JOIN building_entrance be
+      ON p.poi_id COLLATE utf8mb4_unicode_ci = be.building_poi_id
+    WHERE p.poi_type = 'building'
+    `
+  );
+
+  const [edges] = await db.execute(
+    `
+    SELECT start_poi_id as \`from\`, end_poi_id as \`to\`,
+      distance as weight
+    FROM path_connection
+    `
+  );
+
+  const parsedNodes = nodes.map(parsePoiRow);
+  const nodeMap = Object.fromEntries(parsedNodes.map((node) => [node.id, node]));
+  const buildingMap = {};
+
+  buildingRows.forEach((row) => {
+    const id = String(row.id);
+    if (!buildingMap[id]) {
+      buildingMap[id] = {
+        id,
+        name: row.name,
+        lat: Number(row.lat),
+        lng: Number(row.lng),
+        type: row.type,
+        entrances: [],
+      };
+    }
+    buildingMap[id].entrances.push(String(row.entrance_poi_id));
+  });
+
+  if (!Object.keys(buildingMap).length) {
+    parsedNodes
+      .filter((node) => node.type === "entrance")
+      .forEach((node) => {
+        const name = node.name.split("_")[0];
+        const id = `virtual-building:${name}`;
+
+        if (!buildingMap[id]) {
+          buildingMap[id] = {
+            id,
+            name,
+            lat: node.lat,
+            lng: node.lng,
+            type: "building",
+            entrances: [],
+          };
+        }
+
+        buildingMap[id].entrances.push(node.id);
+      });
+  }
+
+  return {
+    nodes: parsedNodes,
+    nodeMap,
+    buildings: Object.values(buildingMap),
+    edges: edges.map((edge) => ({
+      from: String(edge.from),
+      to: String(edge.to),
+      weight: Number(edge.weight),
+    })),
+  };
+}
+
+function parsePoiRow(row) {
+  return {
+    id: String(row.id),
+    name: row.name,
+    lat: Number(row.lat),
+    lng: Number(row.lng),
+    type: row.type,
+  };
+}
+
+function findBuilding(buildings, rawName, point) {
+  const name = normalizePlaceName(rawName);
+  const byName = buildings.find((building) => {
+    const buildingName = normalizePlaceName(building.name);
+    return name.includes(buildingName) || buildingName.includes(name);
+  });
+
+  if (byName) return byName;
+  if (!point) return null;
+
+  return buildings
+    .map((building) => ({
+      building,
+      distance: getDistance(point.lat, point.lng, building.lat, building.lng),
+    }))
+    .sort((a, b) => a.distance - b.distance)[0]?.building || null;
+}
+
+function normalizePlaceName(value) {
+  return String(value || "")
+    .replace(/한양여자대학교|한양여대|서울특별시|성동구/g, "")
+    .replace(/\s|\(|\)|-/g, "")
+    .toLowerCase();
+}
+
+function toPoint(lat, lng) {
+  const parsedLat = Number(lat);
+  const parsedLng = Number(lng);
+  if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) return null;
+  return { lat: parsedLat, lng: parsedLng };
+}
+
+function findBuildingPath(startBuilding, destinationBuilding, graphData, options) {
+  let best = null;
+
+  startBuilding.entrances.forEach((startId) => {
+    destinationBuilding.entrances.forEach((endId) => {
+      const route = dijkstra(startId, endId, graphData, options);
+      if (route && (!best || route.distance < best.distance)) {
+        best = {
+          ...route,
+          fromEntrance: startId,
+          toEntrance: endId,
+        };
+      }
+    });
+  });
+
+  return best;
+}
+
+function dijkstra(startId, endId, graphData, options = {}) {
+  const graph = {};
+  const isBlocked = (nodeId) =>
+    options.avoidStairs && graphData.nodeMap[nodeId]?.type === "stair";
+
+  graphData.edges.forEach((edge) => {
+    if (isBlocked(edge.from) || isBlocked(edge.to)) return;
+    if (!graph[edge.from]) graph[edge.from] = [];
+    if (!graph[edge.to]) graph[edge.to] = [];
+    graph[edge.from].push({ node: edge.to, weight: edge.weight });
+    graph[edge.to].push({ node: edge.from, weight: edge.weight });
+  });
+
+  const dist = {};
+  const prev = {};
+  const visited = new Set();
+  const queue = [[0, startId]];
+
+  dist[startId] = 0;
+
+  while (queue.length) {
+    queue.sort((a, b) => a[0] - b[0]);
+    const [distance, current] = queue.shift();
+
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (current === endId) break;
+
+    (graph[current] || []).forEach(({ node, weight }) => {
+      const nextDistance = distance + weight;
+      if (nextDistance < (dist[node] ?? Infinity)) {
+        dist[node] = nextDistance;
+        prev[node] = current;
+        queue.push([nextDistance, node]);
+      }
+    });
+  }
+
+  if (!Number.isFinite(dist[endId])) return null;
+
+  const path = [];
+  let current = endId;
+  while (current !== undefined) {
+    path.unshift(current);
+    current = prev[current];
+  }
+
+  return {
+    path,
+    distance: Math.round(dist[endId]),
+  };
+}
+
+function formatAccessRoute(id, title, route, graphData) {
+  if (!route) return null;
+
+  const path = route.path
+    .map((nodeId) => graphData.nodeMap[nodeId])
+    .filter(Boolean);
+  const stairCount = path.filter((node) => node.type === "stair").length;
+  const rampCount = path.filter((node) => node.type === "ramp").length;
+  const elevatorCount = path.filter((node) => node.type === "elevator").length;
+  const crosswalkCount = path.filter((node) => node.type === "crosswalk").length;
+
+  return {
+    id,
+    title,
+    distance: route.distance,
+    duration: Math.max(1, Math.ceil(route.distance / 60)),
+    dangerCount: stairCount,
+    features: {
+      stairs: stairCount,
+      ramps: rampCount,
+      elevators: elevatorCount,
+      crosswalks: crosswalkCount,
+    },
+    path,
+  };
+}
+
+function summarizeBuilding(building) {
+  return {
+    id: building.id,
+    name: building.name,
+    lat: building.lat,
+    lng: building.lng,
+  };
+}
