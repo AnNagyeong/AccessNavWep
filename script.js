@@ -12,6 +12,7 @@ let markers = [];
 let startPlace = null;
 let endPlace = null;
 let currentPolyline = null;
+let currentRoutePolylines = [];
 let dangerCircles = [];
 let startMarker = null;
 let endMarker = null;
@@ -28,6 +29,7 @@ const NEARBY_CATEGORY_CODES = {
 };
 
 const searchInput = document.getElementById("searchInput");
+const backBtn = document.getElementById("backBtn");
 const searchBtn = document.getElementById("searchBtn");
 const resultList = document.getElementById("resultList");
 
@@ -50,6 +52,12 @@ const closeFilterBtn = document.getElementById("closeFilterBtn");
 const loginNavBtn = document.getElementById("loginNavBtn");
 const cameraNavBtn = document.getElementById("cameraNavBtn");
 const bookmarkNavBtn = document.getElementById("bookmarkNavBtn");
+
+loadSelectedRouteFromQuery();
+
+if (backBtn) {
+  backBtn.addEventListener("click", handleBackButton);
+}
 
 if (loginNavBtn) {
   loginNavBtn.addEventListener("click", () => {
@@ -181,15 +189,38 @@ function openReportPage() {
 }
 
 function searchPlaces(keyword) {
-  placesService.keywordSearch(keyword, (data, status) => {
-    if (status !== kakao.maps.services.Status.OK) {
+  Promise.all([
+    fetchMapServicePlaces(keyword),
+    new Promise((resolve) => {
+      placesService.keywordSearch(keyword, (data, status) => {
+        resolve(status === kakao.maps.services.Status.OK ? data : []);
+      });
+    }),
+  ]).then(([mapServicePlaces, kakaoPlaces]) => {
+    const places = [...mapServicePlaces, ...kakaoPlaces];
+
+    if (!places.length) {
       alert("검색 결과가 없습니다.");
       hideResultList();
       return;
     }
 
-    renderResultList(data);
+    renderResultList(places);
   });
+}
+
+async function fetchMapServicePlaces(keyword) {
+  try {
+    const response = await fetch(
+      `/api/access-places?query=${encodeURIComponent(keyword)}`
+    );
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) return [];
+    return data.items || [];
+  } catch {
+    return [];
+  }
 }
 
 function searchNearbyPlaces(keyword) {
@@ -336,6 +367,10 @@ function selectPlace(place) {
 
   updatePlaceSheet();
   openPlaceSheet();
+
+  if (startPlace && endPlace) {
+    drawDefaultRouteFromSelection();
+  }
 }
 
 function routeQueryParams() {
@@ -351,6 +386,213 @@ function routeQueryParams() {
   });
 
   return params.toString();
+}
+
+async function loadSelectedRouteFromQuery() {
+  const params = new URLSearchParams(location.search);
+  const routeType = params.get("routeType");
+
+  if (!routeType) return;
+
+  try {
+    const response = await fetch(`/api/access-routes?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "경로를 불러오지 못했습니다.");
+    }
+
+    const route = data.routes.find((item) => item.id === routeType) || data.routes[0];
+    if (!route) {
+      throw new Error("선택한 경로를 찾을 수 없습니다.");
+    }
+
+    startPlace = {
+      place_name: data.start.name,
+      y: data.start.lat,
+      x: data.start.lng,
+      road_address_name: "",
+      address_name: data.start.name,
+    };
+    endPlace = {
+      place_name: data.destination.name,
+      y: data.destination.lat,
+      x: data.destination.lng,
+      road_address_name: "",
+      address_name: data.destination.name,
+    };
+
+    updateStartMarker(startPlace);
+    updateEndMarker(endPlace);
+    drawRoute({ path: route.path, colored: true });
+    drawDangerZones(dangerZonesFromRoute(route.path));
+    updateRouteInfo({
+      distance: route.distance,
+      duration: route.duration * 60,
+    });
+    updateDangerCount(route.dangerCount);
+    updateSelectedRouteSheet(route);
+    updateSafetyRatio(route);
+
+    document.body.classList.add("route-mode");
+    openPlaceSheet();
+  } catch (error) {
+    console.error("선택 경로 로딩 실패:", error);
+    alert(error.message);
+  }
+}
+
+async function drawDefaultRouteFromSelection() {
+  try {
+    const response = await fetch(`/api/access-routes?${routeQueryParams()}`);
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "경로를 불러오지 못했습니다.");
+    }
+
+    const route =
+      data.routes.find((item) => item.id === "accessible") || data.routes[0];
+
+    if (!route) {
+      throw new Error("사용 가능한 경로가 없습니다.");
+    }
+
+    drawRoute({ path: route.path, colored: true });
+    drawDangerZones(dangerZonesFromRoute(route.path));
+    updateRouteInfo({
+      distance: route.distance,
+      duration: route.duration * 60,
+    });
+    updateDangerCount(route.dangerCount);
+    updateSelectedRouteSheet(route);
+    updateSafetyRatio(route);
+  } catch (error) {
+    console.error("기본 경로 로딩 실패:", error);
+    alert(error.message);
+  }
+}
+
+function updateSelectedRouteSheet(route) {
+  const routeLabel = route.id === "accessible" ? "추천 경로" : "최단 경로";
+  placeName.textContent = `${endPlace.place_name}까지 ${routeLabel}`;
+  placeAddress.textContent =
+    `계단 ${route.features.stairs}개 · 경사로 ${route.features.ramps}개 · ` +
+    `엘리베이터 ${route.features.elevators}개 · 횡단보도 ${route.features.crosswalks}개`;
+}
+
+function updateSafetyRatio(route) {
+  const ratio = calculateSafetyRatio(route.path || []);
+  const safeBar = document.querySelector(".safety-bar .safe");
+  const warnBar = document.querySelector(".safety-bar .warn");
+  const labels = document.querySelectorAll(".safety-labels span");
+
+  if (safeBar) {
+    safeBar.style.width = `${ratio.safe}%`;
+    safeBar.style.flexBasis = `${ratio.safe}%`;
+  }
+  if (warnBar) {
+    warnBar.style.width = `${ratio.warn}%`;
+    warnBar.style.flexBasis = `${ratio.warn}%`;
+  }
+  if (labels[0]) labels[0].textContent = `안전 ${ratio.safe}%`;
+  if (labels[1]) labels[1].textContent = `주의 ${ratio.warn}%`;
+}
+
+function calculateSafetyRatio(path) {
+  if (path.length < 2) {
+    return { safe: 100, warn: 0 };
+  }
+
+  let safeDistance = 0;
+  let warnDistance = 0;
+
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const fromNode = path[i];
+    const toNode = path[i + 1];
+    const distance = getDistance(fromNode.lat, fromNode.lng, toNode.lat, toNode.lng);
+    const color = routeSegmentColor(fromNode, toNode);
+
+    if (color === "#48d10f") {
+      safeDistance += distance;
+    } else {
+      warnDistance += distance;
+    }
+  }
+
+  const total = safeDistance + warnDistance;
+  if (!total) {
+    return { safe: 100, warn: 0 };
+  }
+
+  const safe = Math.round((safeDistance / total) * 100);
+  return {
+    safe,
+    warn: 100 - safe,
+  };
+}
+
+function getDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function handleBackButton() {
+  if (startPlace || endPlace || currentPolyline || currentRoutePolylines.length) {
+    resetRouteState();
+    return;
+  }
+
+  history.back();
+}
+
+function resetRouteState() {
+  clearSearchMarkers();
+  clearRoutePolylines();
+  clearDangerZones();
+
+  if (startMarker) {
+    startMarker.setMap(null);
+    startMarker = null;
+  }
+
+  if (endMarker) {
+    endMarker.setMap(null);
+    endMarker = null;
+  }
+
+  startPlace = null;
+  endPlace = null;
+  searchInput.value = "";
+  hideResultList();
+  document.body.classList.remove("route-mode");
+  resetPlaceSheet();
+
+  if (history.replaceState) {
+    history.replaceState(null, "", "index.html");
+  }
+}
+
+function clearDangerZones() {
+  dangerCircles.forEach((circle) => circle.setMap(null));
+  dangerCircles = [];
+}
+
+function resetPlaceSheet() {
+  placeName.textContent = "장소명";
+  placeAddress.textContent = "주소가 여기에 표시됩니다.";
+  placeSheet.classList.add("hidden");
+  placeSheet.classList.remove("collapsed");
+  placeSheet.classList.add("expanded");
+  updateSafetyRatio({ path: [] });
 }
 
 function moveToCurrentLocation() {
@@ -505,37 +747,104 @@ function updateEndMarker(place) {
 }
 
 function drawRoute(data) {
-  const path = (data.path || []).map(
-    (p) => new kakao.maps.LatLng(p.lat, p.lng)
-  );
+  const routeNodes = data.path || [];
+  const path = routeNodes.map((p) => new kakao.maps.LatLng(p.lat, p.lng));
 
   if (!path.length) {
     alert("경로 좌표가 없습니다.");
     return;
   }
 
-  if (currentPolyline) {
-    currentPolyline.setMap(null);
+  clearRoutePolylines();
+
+  if (data.colored && routeNodes.length > 1) {
+    for (let i = 0; i < routeNodes.length - 1; i += 1) {
+      const segment = new kakao.maps.Polyline({
+        path: [path[i], path[i + 1]],
+        strokeWeight: 7,
+        strokeColor: routeSegmentColor(routeNodes[i], routeNodes[i + 1]),
+        strokeOpacity: 0.95,
+        strokeStyle: "solid",
+        zIndex: 10,
+      });
+
+      segment.setMap(map);
+      currentRoutePolylines.push(segment);
+    }
+  } else {
+    currentPolyline = new kakao.maps.Polyline({
+      path,
+      strokeWeight: 5,
+      strokeColor: "#48d10f",
+      strokeOpacity: 0.9,
+      strokeStyle: "solid",
+    });
+
+    currentPolyline.setMap(map);
   }
-
-  currentPolyline = new kakao.maps.Polyline({
-    path,
-    strokeWeight: 5,
-    strokeColor: "#48d10f",
-    strokeOpacity: 0.9,
-    strokeStyle: "solid",
-  });
-
-  currentPolyline.setMap(map);
 
   const bounds = new kakao.maps.LatLngBounds();
   path.forEach((point) => bounds.extend(point));
   map.setBounds(bounds);
+
+  if (data.colored) {
+    updateSafetyRatio({ path: routeNodes });
+  }
+}
+
+function clearRoutePolylines() {
+  if (currentPolyline) {
+    currentPolyline.setMap(null);
+    currentPolyline = null;
+  }
+
+  currentRoutePolylines.forEach((polyline) => polyline.setMap(null));
+  currentRoutePolylines = [];
+}
+
+function routeSegmentColor(fromNode, toNode) {
+  const types = [fromNode?.type, toNode?.type];
+
+  if (types.includes("stair")) {
+    return "#f26a6a";
+  }
+
+  if (
+    types.includes("crosswalk") ||
+    types.includes("ramp") ||
+    types.includes("elevator")
+  ) {
+    return "#f4c20d";
+  }
+
+  return "#48d10f";
+}
+
+function dangerZonesFromRoute(path) {
+  const zones = new Map();
+
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const fromNode = path[i];
+    const toNode = path[i + 1];
+
+    if (routeSegmentColor(fromNode, toNode) !== "#f26a6a") {
+      continue;
+    }
+
+    [fromNode, toNode].forEach((node) => {
+      zones.set(node.id || `${node.lat},${node.lng}`, {
+        lat: node.lat,
+        lng: node.lng,
+        radius: 13,
+      });
+    });
+  }
+
+  return [...zones.values()];
 }
 
 function drawDangerZones(zones) {
-  dangerCircles.forEach((circle) => circle.setMap(null));
-  dangerCircles = [];
+  clearDangerZones();
 
   zones.forEach((zone) => {
     const circle = new kakao.maps.Circle({

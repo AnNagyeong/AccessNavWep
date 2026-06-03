@@ -393,6 +393,7 @@ app.use(express.static(__dirname));
 // API 주소가 잘못됐을 때 HTML 대신 JSON으로 응답
 
 app.get("/api/access-routes", handleAccessRoutes);
+app.get("/api/access-places", handleAccessPlaces);
 
 app.use("/api", (req, res) => {
   res.status(404).json({
@@ -418,37 +419,40 @@ async function handleAccessRoutes(req, res) {
     const destinationPoint = toPoint(req.query.y, req.query.x);
 
     const graphData = await loadMapServiceGraph();
-    const startBuilding = findBuilding(graphData.buildings, startName, startPoint);
-    const destinationBuilding = findBuilding(
-      graphData.buildings,
+    const startTarget = findRouteTarget(graphData, startName, startPoint);
+    const destinationTarget = findRouteTarget(
+      graphData,
       destinationName,
       destinationPoint
     );
 
-    if (!startBuilding || !destinationBuilding) {
+    if (!startTarget || !destinationTarget) {
       return res.status(404).json({
         ok: false,
-        error: "출발지 또는 목적지를 MapService 건물 데이터에서 찾을 수 없습니다.",
-        buildings: graphData.buildings.map((building) => building.name),
+        error: "출발지 또는 목적지를 MapService POI 데이터에서 찾을 수 없습니다.",
+        candidates: [
+          ...graphData.buildings.map((building) => building.name),
+          ...graphData.nodes.map((node) => node.name),
+        ],
       });
     }
 
-    if (startBuilding.id === destinationBuilding.id) {
+    if (startTarget.id === destinationTarget.id) {
       return res.status(400).json({
         ok: false,
         error: "출발지와 목적지가 같습니다.",
       });
     }
 
-    const shortest = findBuildingPath(
-      startBuilding,
-      destinationBuilding,
+    const shortest = findTargetPath(
+      startTarget,
+      destinationTarget,
       graphData,
       { avoidStairs: false }
     );
-    const accessible = findBuildingPath(
-      startBuilding,
-      destinationBuilding,
+    const accessible = findTargetPath(
+      startTarget,
+      destinationTarget,
       graphData,
       { avoidStairs: true }
     );
@@ -467,8 +471,8 @@ async function handleAccessRoutes(req, res) {
 
     res.json({
       ok: true,
-      start: summarizeBuilding(startBuilding),
-      destination: summarizeBuilding(destinationBuilding),
+      start: summarizeRouteTarget(startTarget, graphData),
+      destination: summarizeRouteTarget(destinationTarget, graphData),
       routes,
     });
   } catch (error) {
@@ -478,6 +482,90 @@ async function handleAccessRoutes(req, res) {
       error: error.message,
     });
   }
+}
+
+async function handleAccessPlaces(req, res) {
+  try {
+    const query = normalizePlaceName(req.query.query || "");
+    if (!query) {
+      return res.json({ ok: true, items: [] });
+    }
+
+    const graphData = await loadMapServiceGraph();
+    const items = [
+      ...graphData.buildings.map((building) => ({
+        id: building.id,
+        place_name: building.name,
+        address_name: "MapService 건물",
+        road_address_name: "",
+        x: building.lng,
+        y: building.lat,
+        source: "mapservice",
+      })),
+      ...graphData.nodes.map((node) => ({
+        id: node.id,
+        place_name: node.name,
+        address_name: `MapService POI · ${node.type}`,
+        road_address_name: "",
+        x: node.lng,
+        y: node.lat,
+        source: "mapservice",
+      })),
+    ]
+      .filter((item) => {
+        return placeMatchesQuery(item, query);
+      })
+      .sort((a, b) => placeSearchScore(b, query) - placeSearchScore(a, query));
+
+    res.json({
+      ok: true,
+      items: items.slice(0, 20),
+    });
+  } catch (error) {
+    console.error("Access places error:", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
+function placeSearchScore(item, query) {
+  const names = searchNamesForPlace(item);
+  let score = 0;
+
+  if (names.some((name) => name === query)) score += 100;
+  if (names.some((name) => name.startsWith(query))) score += 50;
+  if (item.source === "mapservice" && !String(item.id).startsWith("virtual-building:")) {
+    score += 20;
+  }
+  if (names.some((name) => name.includes(query))) score += 10;
+
+  return score;
+}
+
+function placeMatchesQuery(item, query) {
+  return searchNamesForPlace(item).some(
+    (name) => name.includes(query) || query.includes(name)
+  );
+}
+
+function searchNamesForPlace(item) {
+  const rawName = String(item.place_name || "");
+  const baseName = rawName.split("_")[0];
+  const names = new Set([
+    normalizePlaceName(rawName),
+    normalizePlaceName(baseName),
+  ]);
+
+  if (item.address_name?.includes("entrance") || /정문|쪽문|입구|출입구/.test(rawName)) {
+    names.add(normalizePlaceName(`${baseName} 입구`));
+    names.add(normalizePlaceName(`${baseName} 출입구`));
+    names.add(normalizePlaceName(`한양여자대학교 ${baseName} 입구`));
+    names.add(normalizePlaceName(`한양여대 ${baseName} 입구`));
+  }
+
+  return [...names].filter(Boolean);
 }
 
 async function loadMapServiceGraph() {
@@ -591,6 +679,46 @@ function findBuilding(buildings, rawName, point) {
     .sort((a, b) => a.distance - b.distance)[0]?.building || null;
 }
 
+function findRouteTarget(graphData, rawName, point) {
+  const exactPoi = findPoiNode(graphData.nodes, rawName);
+  if (exactPoi) {
+    return {
+      id: exactPoi.id,
+      name: exactPoi.name,
+      lat: exactPoi.lat,
+      lng: exactPoi.lng,
+      nodeIds: [exactPoi.id],
+      type: "poi",
+    };
+  }
+
+  const building = findBuilding(graphData.buildings, rawName, point);
+  if (!building) return null;
+
+  return {
+    ...building,
+    nodeIds: building.entrances,
+    type: "building",
+  };
+}
+
+function findPoiNode(nodes, rawName) {
+  const name = normalizePlaceName(rawName);
+  if (!name) return null;
+
+  const exact = nodes.find((node) => normalizePlaceName(node.name) === name);
+  if (exact) return exact;
+
+  return nodes.find((node) => {
+    return searchNamesForPlace({
+      id: node.id,
+      place_name: node.name,
+      address_name: `MapService POI · ${node.type}`,
+      source: "mapservice",
+    }).some((nodeName) => name.includes(nodeName) || nodeName.includes(name));
+  });
+}
+
 function normalizePlaceName(value) {
   return String(value || "")
     .replace(/한양여자대학교|한양여대|서울특별시|성동구/g, "")
@@ -605,11 +733,11 @@ function toPoint(lat, lng) {
   return { lat: parsedLat, lng: parsedLng };
 }
 
-function findBuildingPath(startBuilding, destinationBuilding, graphData, options) {
+function findTargetPath(startTarget, destinationTarget, graphData, options) {
   let best = null;
 
-  startBuilding.entrances.forEach((startId) => {
-    destinationBuilding.entrances.forEach((endId) => {
+  startTarget.nodeIds.forEach((startId) => {
+    destinationTarget.nodeIds.forEach((endId) => {
       const route = dijkstra(startId, endId, graphData, options);
       if (route && (!best || route.distance < best.distance)) {
         best = {
@@ -711,4 +839,19 @@ function summarizeBuilding(building) {
     lat: building.lat,
     lng: building.lng,
   };
+}
+
+function summarizeRouteTarget(target, graphData) {
+  if (target.type === "poi") {
+    const node = graphData.nodeMap[target.id] || target;
+    return {
+      id: node.id,
+      name: node.name,
+      lat: node.lat,
+      lng: node.lng,
+      type: node.type,
+    };
+  }
+
+  return summarizeBuilding(target);
 }

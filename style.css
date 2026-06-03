@@ -228,18 +228,29 @@ body {
   flex: 1;
   background: #f3f3f3;
   border-radius: 8px;
-  padding: 12px 8px;
+  min-height: 78px;
+  padding: 10px 8px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .info-card strong {
   display: block;
-  font-size: 18px;
-  margin-bottom: 6px;
+  min-height: 24px;
+  margin-bottom: 7px;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 800;
 }
 
 .info-card span {
-  font-size: 10px;
+  display: block;
+  min-height: 14px;
+  font-size: 11px;
+  line-height: 1.25;
   color: #666;
 }
 
@@ -258,11 +269,13 @@ body {
 
 .safety-bar .safe {
   width: 20%;
+  flex: 0 0 20%;
   background: #45d10f;
 }
 
 .safety-bar .warn {
   width: 80%;
+  flex: 0 0 80%;
   background: #f4c20d;
 }
 

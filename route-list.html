@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css" />
   <style>
     body { background: #fff; }
-    .route-list-page { min-height: 100vh; background: #fff; color: #222; padding: 0 28px 90px; }
+    .route-list-page { min-height: 100vh; background: #fff; color: #222; padding: 0 28px 28px; }
     .route-list-header { height: 64px; display: flex; align-items: center; gap: 2px; border-bottom: 1px solid #dadada; }
     .route-list-back { width: 40px; height: 40px; border: 0; background: transparent; color: #222; font-size: 28px; cursor: pointer; }
     .route-list-header h1 { margin: 0; font-size: 20px; font-weight: 700; }
@@ -23,14 +23,8 @@
     .route-option.danger .route-option-bar { background: #f26a6a; }
     .route-option h2 { margin: 0 0 6px; font-size: 14px; }
     .route-option p { margin: 0; color: #777; font-size: 12px; line-height: 1.45; }
-    .route-start-fixed {
-      position: fixed; left: 28px; right: 28px; bottom: 22px; max-width: 720px; height: 54px;
-      border: 0; border-radius: 8px; background: #49d11a; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
-    }
-    .route-start-fixed:disabled { background: #cfcfcf; cursor: default; }
     @media (min-width: 1024px) {
       .route-list-page { width: min(1120px, calc(100vw - 96px)); margin: 0 auto; padding-top: 28px; }
-      .route-start-fixed { left: calc((100vw - min(1120px, calc(100vw - 96px))) / 2 + 28px); right: auto; width: 320px; }
     }
   </style>
 </head>
@@ -43,15 +37,12 @@
 
     <p class="route-list-summary" id="routeSummary">경로를 불러오는 중...</p>
     <section class="route-options" id="routeOptions" aria-label="추천 경로"></section>
-    <button class="route-start-fixed" type="button" id="startGuidanceBtn" disabled>안내 시작</button>
   </main>
 
   <script>
     const params = new URLSearchParams(location.search);
     const routeOptions = document.getElementById("routeOptions");
     const routeSummary = document.getElementById("routeSummary");
-    const startGuidanceBtn = document.getElementById("startGuidanceBtn");
-    let selectedRouteId = null;
 
     loadRoutes();
 
@@ -68,18 +59,16 @@
         renderRoutes(data.routes);
       } catch (error) {
         routeSummary.textContent = error.message;
-        startGuidanceBtn.disabled = true;
       }
     }
 
     function renderRoutes(routes) {
       routeOptions.innerHTML = "";
-      selectedRouteId = routes[0]?.id || null;
 
       routes.forEach((route) => {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = `route-option ${route.dangerCount ? "danger" : ""} ${route.id === selectedRouteId ? "selected" : ""}`;
+        button.className = `route-option ${route.dangerCount ? "danger" : ""}`;
         button.dataset.routeId = route.id;
         button.innerHTML = `
           <div class="route-option-bar" aria-hidden="true"></div>
@@ -90,22 +79,13 @@
         `;
 
         button.addEventListener("click", () => {
-          selectedRouteId = route.id;
-          document.querySelectorAll(".route-option").forEach((option) => {
-            option.classList.toggle("selected", option.dataset.routeId === selectedRouteId);
-          });
+          params.set("routeType", route.id);
+          location.href = `index.html?${params.toString()}`;
         });
 
         routeOptions.appendChild(button);
       });
-
-      startGuidanceBtn.disabled = !selectedRouteId;
     }
-
-    startGuidanceBtn.addEventListener("click", () => {
-      params.set("routeType", selectedRouteId || "accessible");
-      location.href = `guidance.html?${params.toString()}`;
-    });
   </script>
 </body>
 </html>
