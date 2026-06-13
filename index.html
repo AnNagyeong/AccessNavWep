@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AccessNav Web</title>
-  <link rel="stylesheet" href="style.css?v=20260604-danger-zones-1" />
+  <link rel="stylesheet" href="style.css?v=20260604-info-panel-2" />
 </head>
 <body>
   <div class="phone">
@@ -26,6 +26,9 @@
       <button class="chip" data-keyword="택시 정류장">🚕 택시 정류장</button>
       <button class="chip" data-keyword="편의점">🏪 편의점</button>
       <button class="chip" data-keyword="카페">☕ 카페</button>
+      <button class="chip" data-keyword="음식점">🍽 음식점</button>
+      <button class="chip" data-keyword="병원">🏥 병원</button>
+      <button class="chip" data-keyword="편의시설">♿ 편의시설</button>
     </div>
 
     <!-- 검색 결과 -->
@@ -86,7 +89,7 @@
     <div id="placeSheet" class="bottom-sheet expanded hidden">
   <div class="sheet-handle" id="sheetHandle"></div>
 
-  <div class="sheet-content">
+  <div class="sheet-content" id="panelContent">
     <p class="sheet-label">선택한 목적지</p>
     <h3 id="placeName">장소명</h3>
     <p id="placeAddress" class="muted">주소가 여기에 표시됩니다.</p>
@@ -124,6 +127,69 @@
   </div>
 </div>
 
+    <section id="favoritesPanel" class="favorites-screen favorites-panel hidden" aria-label="즐겨찾기">
+      <header class="favorites-header">
+        <button class="favorites-back-button" id="closeFavoritesPanelBtn" type="button" aria-label="닫기">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 5 8 12l7 7" />
+          </svg>
+        </button>
+        <div>
+          <h1>즐겨찾기</h1>
+          <p>자주 찾는 장소 그룹을 관리하세요.</p>
+        </div>
+        <button class="favorites-edit-button" type="button">편집</button>
+      </header>
+
+      <section class="favorites-overview" aria-label="즐겨찾기 요약">
+        <div class="overview-item">
+          <span>그룹</span>
+          <strong>3</strong>
+        </div>
+        <div class="overview-item">
+          <span>등록순</span>
+          <strong>최신</strong>
+        </div>
+        <button class="sort-button" type="button">등록순</button>
+      </section>
+
+      <div class="favorites-content">
+        <section class="favorite-list" aria-label="즐겨찾기 그룹 목록">
+          <article class="favorite-group">
+            <span class="favorite-star green" aria-hidden="true">★</span>
+            <div class="favorite-info">
+              <h2>기본 그룹</h2>
+              <p>6 · 나만 보기</p>
+            </div>
+            <button class="group-menu-button" type="button" aria-label="기본 그룹 메뉴">⋮</button>
+          </article>
+
+          <article class="favorite-group">
+            <span class="favorite-star purple" aria-hidden="true">★</span>
+            <div class="favorite-info">
+              <h2>남냠</h2>
+              <p>12 · 공개</p>
+            </div>
+            <button class="group-menu-button" type="button" aria-label="남냠 메뉴">⋮</button>
+          </article>
+
+          <article class="favorite-group">
+            <span class="favorite-star yellow" aria-hidden="true">★</span>
+            <div class="favorite-info">
+              <h2>경치 좋은 카페</h2>
+              <p>5 · 나만 보기</p>
+            </div>
+            <button class="group-menu-button" type="button" aria-label="경치 좋은 카페 메뉴">⋮</button>
+          </article>
+        </section>
+      </div>
+
+      <button class="add-group-button" type="button">
+        <span aria-hidden="true">+</span>
+        새 그룹 추가
+      </button>
+    </section>
+
     <!-- 하단 네비 -->
     <nav class="bottom-nav" aria-label="하단 내비게이션">
       <button class="nav-item active" type="button" aria-label="홈">
@@ -159,6 +225,6 @@
   </div>
 
   <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d&libraries=services"></script>
-  <script src="script.js?v=20260604-danger-zones-1"></script>
+  <script src="script.js?v=20260604-info-panel-1"></script>
 </body>
 </html>
