@@ -179,6 +179,171 @@
       opacity: 0.95;
     }
 
+    .map-control-buttons {
+      position: fixed;
+      top: 132px;
+      right: 16px;
+      z-index: 35;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .map-control-btn {
+      width: 44px;
+      height: 44px;
+      border: none;
+      border-radius: 50%;
+      background: #fff;
+      font-size: 20px;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+    }
+
+    .bottom-nav {
+      position: fixed;
+      top: min(312px, calc(100vh - 244px));
+      right: 16px;
+      bottom: auto;
+      width: 44px;
+      height: auto;
+      padding: 6px 0;
+      border: none;
+      border-radius: 22px;
+      background: #fff;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 2px;
+      transform: none;
+    }
+
+    .nav-item {
+      width: 40px;
+      height: 42px;
+      border: none;
+      background: transparent;
+      color: #2f2f2f;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+
+    .nav-item svg {
+      width: 23px;
+      height: 23px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .filter-panel {
+      position: absolute;
+      inset: 0;
+      z-index: 80;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.18);
+    }
+
+    .filter-panel.hidden {
+      display: none;
+    }
+
+    .filter-sheet {
+      position: absolute;
+      top: 10px;
+      right: 8px;
+      bottom: 10px;
+      width: calc(100% - 110px);
+      max-width: 560px;
+      min-width: 250px;
+      background: #fff;
+      border-radius: 0 24px 24px 0;
+      padding: 26px 22px;
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .filter-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 34px;
+    }
+
+    .filter-header h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 500;
+      color: #111;
+    }
+
+    .filter-close-btn {
+      width: 34px;
+      height: 34px;
+      border: none;
+      background: transparent;
+      color: #444;
+      font-size: 34px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .filter-options {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .filter-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: 16px;
+      color: #111;
+      cursor: pointer;
+    }
+
+    .filter-option input {
+      display: none;
+    }
+
+    .toggle-ui {
+      position: relative;
+      flex: 0 0 auto;
+      width: 38px;
+      height: 20px;
+      border-radius: 999px;
+      background: #d9d9d9;
+    }
+
+    .toggle-ui::before {
+      content: "";
+      position: absolute;
+      top: 1px;
+      left: 1px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+      transition: transform 0.18s ease;
+    }
+
+    .filter-option input:checked + .toggle-ui {
+      background: #49d000;
+    }
+
+    .filter-option input:checked + .toggle-ui::before {
+      transform: translateX(18px);
+    }
+
     @media (max-width: 768px) {
       .report-panel {
         top: 0;
@@ -191,6 +356,11 @@
       }
 
       #reportMap {
+        display: none;
+      }
+
+      .map-control-buttons,
+      .bottom-nav {
         display: none;
       }
     }
@@ -245,13 +415,89 @@
 
       <button class="submit-btn" id="submitReportBtn">제보하기</button>
     </div>
+
+    <div class="map-control-buttons">
+      <button id="reportFavoriteBtn" class="map-control-btn" type="button">⭐</button>
+      <button id="reportFilterBtn" class="map-control-btn" type="button">⚙️</button>
+      <button id="reportCurrentLocationBtn" class="map-control-btn" type="button">📍</button>
+    </div>
+
+    <div id="reportFilterPanel" class="filter-panel hidden">
+      <aside class="filter-sheet">
+        <div class="filter-header">
+          <h2>옵션 필터</h2>
+          <button type="button" id="closeReportFilterBtn" class="filter-close-btn">×</button>
+        </div>
+
+        <div class="filter-options">
+          <label class="filter-option">
+            <span>장애인 화장실</span>
+            <input type="checkbox" />
+            <span class="toggle-ui"></span>
+          </label>
+          <label class="filter-option">
+            <span>배리어프리 매장</span>
+            <input type="checkbox" />
+            <span class="toggle-ui"></span>
+          </label>
+          <label class="filter-option">
+            <span>엘리베이터</span>
+            <input type="checkbox" />
+            <span class="toggle-ui"></span>
+          </label>
+          <label class="filter-option">
+            <span>장애인 전용 주차장</span>
+            <input type="checkbox" />
+            <span class="toggle-ui"></span>
+          </label>
+          <label class="filter-option">
+            <span>버스 정류장</span>
+            <input type="checkbox" />
+            <span class="toggle-ui"></span>
+          </label>
+        </div>
+      </aside>
+    </div>
+
+    <nav class="bottom-nav" aria-label="하단 내비게이션">
+      <button class="nav-item active" type="button" id="reportHomeNavBtn" aria-label="홈">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 11.5 12 4l9 7.5" />
+          <path d="M5.5 10.5V21h13V10.5" />
+        </svg>
+      </button>
+      <button class="nav-item" type="button" id="reportNearbyNavBtn" aria-label="주변 장소">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 21s6-5.3 6-11a6 6 0 0 0-12 0c0 5.7 6 11 6 11Z" />
+          <circle cx="12" cy="10" r="2.5" />
+        </svg>
+      </button>
+      <button class="nav-item" type="button" aria-label="위험 구간 제보">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8h4l1.5-2h5L16 8h4v11H4Z" />
+          <circle cx="12" cy="13.5" r="3.5" />
+        </svg>
+      </button>
+      <button class="nav-item" type="button" id="reportBookmarkNavBtn" aria-label="즐겨찾기">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 4h12v17l-6-3.5L6 21Z" />
+        </svg>
+      </button>
+      <button class="nav-item" type="button" id="reportLoginNavBtn" aria-label="마이 페이지">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+        </svg>
+      </button>
+    </nav>
   </div>
 
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d&libraries=services"></script>
   <script>
     const params = new URLSearchParams(location.search);
 
-    const placeName = params.get("name") || "선택 장소";
+    const hasSelectedPlace = params.has("x") && params.has("y");
+    const placeName = params.get("name") || "";
     const address = params.get("address") || "";
     const x = Number(params.get("x")) || 127.03811;
     const y = Number(params.get("y")) || 37.56184;
@@ -287,21 +533,90 @@
       level: 3
     });
 
-    const marker = new kakao.maps.Marker({
-      map,
-      position: new kakao.maps.LatLng(y, x)
+    let marker = null;
+
+    if (hasSelectedPlace) {
+      marker = new kakao.maps.Marker({
+        map,
+        position: new kakao.maps.LatLng(y, x)
+      });
+
+      if (placeName) {
+        const infowindow = new kakao.maps.InfoWindow({
+          content: `<div style="padding:8px 12px; font-size:13px;">${placeName}</div>`
+        });
+
+        infowindow.open(map, marker);
+      }
+    }
+
+    document.getElementById("reportFavoriteBtn").addEventListener("click", () => {
+      location.href = "index.html?panel=favorites";
     });
 
-    const infowindow = new kakao.maps.InfoWindow({
-      content: `<div style="padding:8px 12px; font-size:13px;">${placeName}</div>`
+    document.getElementById("reportFilterBtn").addEventListener("click", () => {
+      document.getElementById("reportFilterPanel").classList.remove("hidden");
     });
 
-    infowindow.open(map, marker);
+    document.getElementById("closeReportFilterBtn").addEventListener("click", () => {
+      document.getElementById("reportFilterPanel").classList.add("hidden");
+    });
+
+    document.getElementById("reportFilterPanel").addEventListener("click", (event) => {
+      if (event.target.id === "reportFilterPanel") {
+        event.currentTarget.classList.add("hidden");
+      }
+    });
+
+    document.getElementById("reportCurrentLocationBtn").addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        alert("현재 위치 기능을 지원하지 않는 브라우저입니다.");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const currentPosition = new kakao.maps.LatLng(
+            position.coords.latitude,
+            position.coords.longitude
+          );
+          map.setCenter(currentPosition);
+
+          if (!marker) {
+            marker = new kakao.maps.Marker({
+              map,
+              position: currentPosition
+            });
+          } else {
+            marker.setPosition(currentPosition);
+          }
+        },
+        () => {
+          alert("현재 위치를 가져올 수 없습니다. 위치 권한을 허용해주세요.");
+        }
+      );
+    });
+
+    document.getElementById("reportHomeNavBtn").addEventListener("click", () => {
+      location.href = "index.html";
+    });
+
+    document.getElementById("reportNearbyNavBtn").addEventListener("click", () => {
+      location.href = "index.html";
+    });
+
+    document.getElementById("reportBookmarkNavBtn").addEventListener("click", () => {
+      location.href = "index.html?panel=favorites";
+    });
+
+    document.getElementById("reportLoginNavBtn").addEventListener("click", () => {
+      location.href = "mypage.html";
+    });
 
     document.getElementById("submitReportBtn").addEventListener("click", () => {
       const selectedType = document.querySelector(".chip.active")?.dataset.type || "";
       const reportData = {
-        placeName,
+        placeName: placeName || reportLocation.value,
         address: reportLocation.value,
         x,
         y,

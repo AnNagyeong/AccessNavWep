@@ -133,6 +133,16 @@ body {
   flex-wrap: wrap;
 }
 
+.chip-line-break {
+  flex-basis: 100%;
+  width: 0;
+  height: 0;
+}
+
+.chip-line-break + .chip {
+  margin-top: -4px;
+}
+
 .route-mode .chips {
   display: none;
 }
@@ -505,8 +515,15 @@ body {
 }
 
 @media (min-width: 1024px) {
+  .map-control-buttons {
+    position: fixed;
+    top: 132px;
+    right: 16px;
+  }
+
   .bottom-nav {
-    top: min(472px, calc(100vh - 244px));
+    position: fixed;
+    top: min(312px, calc(100vh - 244px));
     right: 16px;
     bottom: auto;
     width: 44px;
@@ -520,6 +537,7 @@ body {
     justify-content: flex-start;
     align-items: center;
     gap: 2px;
+    transform: none;
   }
 
   .nav-item {
@@ -1500,4 +1518,108 @@ body {
     margin-top: 0;
     border-radius: 7px;
   }
+}
+
+.favorites-panel {
+  padding: 24px 24px 24px;
+}
+
+.favorites-panel .favorites-header {
+  grid-template-columns: 42px minmax(0, 1fr) 58px;
+  gap: 8px;
+  min-height: 42px;
+  margin-bottom: 24px;
+  align-items: center;
+}
+
+.favorites-panel .favorites-header h1 {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.favorites-panel .favorites-back-button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+}
+
+.favorites-panel .favorites-back-button svg {
+  width: 30px;
+  height: 30px;
+}
+
+.favorites-panel .favorites-edit-button {
+  width: 52px;
+  height: 32px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 30px;
+}
+
+.favorites-panel .favorites-overview {
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.favorites-panel .overview-item {
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+}
+
+.favorites-panel .overview-item strong {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.favorites-panel .overview-item + .overview-item::before {
+  margin: 0 2px 0 0;
+}
+
+.favorites-panel .sort-button {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.favorites-panel .sort-button::after {
+  content: "⌄";
+  margin-left: 4px;
+}
+
+.favorites-panel .favorite-group {
+  grid-template-columns: 32px 1fr 32px;
+  gap: 12px;
+  min-height: 64px;
+}
+
+.favorites-panel .favorite-star {
+  width: 28px;
+  height: 28px;
+  font-size: 17px;
+  line-height: 1;
+  align-self: center;
+  justify-self: center;
+}
+
+.favorites-panel .favorite-info h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.favorites-panel .favorite-info p {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.favorites-panel .group-menu-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  font-size: 22px;
 }
