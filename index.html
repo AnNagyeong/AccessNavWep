@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AccessNav Web</title>
-  <link rel="stylesheet" href="style.css?v=20260614-chip-wrap-2" />
+  <link rel="stylesheet" href="style.css?v=20260830-weather-cloud" />
 </head>
 <body>
   <div class="phone">
@@ -30,6 +30,14 @@
       <button class="chip" data-keyword="병원">🏥 병원</button>
       <span class="chip-line-break" aria-hidden="true"></span>
       <button class="chip" data-keyword="편의시설">♿ 편의시설</button>
+    </div>
+
+    <div id="weatherBadge" class="weather-badge hidden" aria-live="polite">
+      <span class="weather-icon" aria-hidden="true"></span>
+      <div>
+        <strong id="weatherTemp">--°</strong>
+        <span id="weatherSummary"></span>
+      </div>
     </div>
 
     <!-- 검색 결과 -->
@@ -225,6 +233,6 @@
   </div>
 
   <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d&libraries=services"></script>
-  <script src="script.js?v=20260604-info-panel-1"></script>
+  <script src="script.js?v=20260830-weather-cloud"></script>
 </body>
 </html>

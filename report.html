@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-store" />
   <title>위험 구간 제보</title>
 
   <style>
@@ -22,6 +23,7 @@
       position: relative;
       width: 100%;
       height: 100vh;
+      height: 100dvh;
       overflow: hidden;
       background: #fff;
     }
@@ -35,16 +37,19 @@
 
     .report-panel {
       position: absolute;
-      top: 24px;
-      left: 24px;
-      bottom: 24px;
-      width: 390px;
-      background: #f5f5f5;
-      border-radius: 28px;
-      padding: 24px 18px 24px;
+      left: 14px;
+      bottom: 86px;
+      width: 366px;
+      max-width: calc(100% - 28px);
+      height: 410px;
+      max-height: calc(100vh - 180px);
+      max-height: calc(100dvh - 180px);
+      background: #fff;
+      border-radius: 22px;
+      padding: 12px 16px 14px;
       overflow-y: auto;
       z-index: 20;
-      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
 
       scrollbar-width: none;       /* 파이어폭스 */
       -ms-overflow-style: none;    /* IE */
@@ -57,20 +62,35 @@
     .report-header {
       display: flex;
       align-items: center;
-      gap: 14px;
-      margin-bottom: 28px;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-top: 12px;
+    }
+
+    .report-panel::before {
+      content: "";
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      width: 38px;
+      height: 3px;
+      border-radius: 999px;
+      background: #cfcfcf;
+      transform: translateX(-50%);
     }
 
     .back-btn {
       border: none;
       background: transparent;
-      font-size: 28px;
+      font-size: 24px;
+      line-height: 1;
       cursor: pointer;
       color: #555;
     }
 
     .report-title {
-      font-size: 20px;
+      font-size: 18px;
+      line-height: 1.25;
       font-weight: 700;
       color: #222;
     }
@@ -79,32 +99,44 @@
       display: block;
       font-size: 13px;
       color: #555;
-      margin-bottom: 12px;
+      margin-bottom: 9px;
       font-weight: 600;
     }
 
     .chip-group {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 24px;
+      gap: 8px;
+      margin-bottom: 16px;
     }
 
-    .chip {
+    .chip,
+    .access-chip {
       border: 1px solid #ddd;
       background: #fff;
       border-radius: 18px;
-      padding: 10px 14px;
-      font-size: 13px;
+      padding: 8px 11px;
+      font-size: 12px;
       color: #333;
       cursor: pointer;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
       transition: 0.15s;
     }
 
-    .chip.active {
+    .chip.active,
+    .access-chip.active {
       background: #f1f1f1;
       border-color: #bbb;
+    }
+
+    .access-chip[data-accessibility="accessible"].active {
+      color: #168b28;
+      border-color: #49d000;
+    }
+
+    .access-chip[data-accessibility="not_accessible"].active {
+      color: #c53b3b;
+      border-color: #ee6b6b;
     }
 
     .field-box {
@@ -112,15 +144,15 @@
       border: 1px solid #e2e2e2;
       border-radius: 14px;
       background: #fff;
-      padding: 14px 16px;
-      font-size: 14px;
+      padding: 12px 14px;
+      font-size: 13px;
       color: #333;
-      margin-bottom: 20px;
+      margin-bottom: 15px;
       outline: none;
     }
 
     .slider-wrap {
-      margin-bottom: 24px;
+      margin-bottom: 16px;
     }
 
     .slider {
@@ -134,17 +166,17 @@
       color: #ee6b6b;
       font-size: 14px;
       font-weight: 700;
-      margin-top: 6px;
+      margin-top: 5px;
     }
 
     textarea.field-box {
-      min-height: 110px;
+      min-height: 86px;
       resize: none;
       line-height: 1.5;
     }
 
     .upload-box {
-      height: 140px;
+      height: 88px;
       border: 1px solid #e2e2e2;
       border-radius: 14px;
       background: #fff;
@@ -152,8 +184,8 @@
       align-items: center;
       justify-content: center;
       color: #888;
-      font-size: 14px;
-      margin-bottom: 28px;
+      font-size: 13px;
+      margin-bottom: 16px;
       cursor: pointer;
       text-align: center;
       padding: 16px;
@@ -169,14 +201,19 @@
       border-radius: 14px;
       background: #49d000;
       color: #fff;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 700;
-      padding: 16px;
+      padding: 13px;
       cursor: pointer;
     }
 
     .submit-btn:hover {
       opacity: 0.95;
+    }
+
+    .submit-btn:disabled {
+      cursor: wait;
+      opacity: 0.7;
     }
 
     .map-control-buttons {
@@ -346,21 +383,18 @@
 
     @media (max-width: 768px) {
       .report-panel {
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        width: 100%;
-        border-radius: 0;
-        box-shadow: none;
+        left: 14px;
+        right: auto;
+        bottom: 86px;
+        width: 366px;
+        max-width: calc(100% - 28px);
+        max-height: calc(100vh - 180px);
+        max-height: calc(100dvh - 180px);
+        border-radius: 22px;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
       }
 
-      #reportMap {
-        display: none;
-      }
-
-      .map-control-buttons,
-      .bottom-nav {
+      .map-control-buttons {
         display: none;
       }
     }
@@ -384,6 +418,13 @@
         <button type="button" class="chip" data-type="미끄러운 노면">미끄러운 노면</button>
         <button type="button" class="chip" data-type="공사 통제">공사 통제</button>
         <button type="button" class="chip" data-type="기타">기타</button>
+      </div>
+
+      <label class="section-label">휠체어 진입 정보</label>
+      <div class="chip-group" id="accessibilityChips">
+        <button type="button" class="access-chip active" data-accessibility="unknown">확인 필요</button>
+        <button type="button" class="access-chip" data-accessibility="accessible">진입 가능</button>
+        <button type="button" class="access-chip" data-accessibility="not_accessible">진입 어려움</button>
       </div>
 
       <label class="section-label" for="reportLocation">위치</label>
@@ -410,7 +451,7 @@
       <label class="section-label">사진 첨부</label>
       <label class="upload-box" for="reportImage">
         📷 사진 촬영 또는 앨범에서 선택
-        <input type="file" id="reportImage" accept="image/*" />
+        <input type="file" id="reportImage" accept="image/*" capture="environment" />
       </label>
 
       <button class="submit-btn" id="submitReportBtn">제보하기</button>
@@ -506,7 +547,9 @@
     const slopeRange = document.getElementById("slopeRange");
     const slopeValue = document.getElementById("slopeValue");
     const typeChips = document.querySelectorAll(".chip");
+    const accessibilityChips = document.querySelectorAll(".access-chip");
     const reportImage = document.getElementById("reportImage");
+    const submitReportBtn = document.getElementById("submitReportBtn");
 
     reportLocation.value = address;
 
@@ -517,6 +560,13 @@
     typeChips.forEach((chip) => {
       chip.addEventListener("click", () => {
         typeChips.forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+      });
+    });
+
+    accessibilityChips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        accessibilityChips.forEach((c) => c.classList.remove("active"));
         chip.classList.add("active");
       });
     });
@@ -548,10 +598,12 @@
 
         infowindow.open(map, marker);
       }
+    } else {
+      moveReportMapToCurrentLocation();
     }
 
     document.getElementById("reportFavoriteBtn").addEventListener("click", () => {
-      location.href = "index.html?panel=favorites";
+      location.href = indexUrlWithMap("favorites");
     });
 
     document.getElementById("reportFilterBtn").addEventListener("click", () => {
@@ -569,6 +621,10 @@
     });
 
     document.getElementById("reportCurrentLocationBtn").addEventListener("click", () => {
+      moveReportMapToCurrentLocation();
+    });
+
+    function moveReportMapToCurrentLocation() {
       if (!navigator.geolocation) {
         alert("현재 위치 기능을 지원하지 않는 브라우저입니다.");
         return;
@@ -595,26 +651,31 @@
           alert("현재 위치를 가져올 수 없습니다. 위치 권한을 허용해주세요.");
         }
       );
-    });
+    }
 
     document.getElementById("reportHomeNavBtn").addEventListener("click", () => {
-      location.href = "index.html";
+      location.href = indexUrlWithMap();
     });
 
     document.getElementById("reportNearbyNavBtn").addEventListener("click", () => {
-      location.href = "index.html";
+      location.href = indexUrlWithMap();
     });
 
     document.getElementById("reportBookmarkNavBtn").addEventListener("click", () => {
-      location.href = "index.html?panel=favorites";
+      location.href = indexUrlWithMap("favorites");
     });
 
     document.getElementById("reportLoginNavBtn").addEventListener("click", () => {
       location.href = "mypage.html";
     });
 
-    document.getElementById("submitReportBtn").addEventListener("click", () => {
+    submitReportBtn.addEventListener("click", async () => {
       const selectedType = document.querySelector(".chip.active")?.dataset.type || "";
+      const wheelchairAccess =
+        document.querySelector(".access-chip.active")?.dataset.accessibility || "unknown";
+      const imageData = reportImage.files[0]
+        ? await readFileAsDataURL(reportImage.files[0])
+        : "";
       const reportData = {
         placeName: placeName || reportLocation.value,
         address: reportLocation.value,
@@ -622,12 +683,61 @@
         y,
         type: selectedType,
         slope: slopeRange.value,
-        detail: document.getElementById("reportDetail").value
+        wheelchairAccess,
+        detail: document.getElementById("reportDetail").value,
+        imageData
       };
 
-      console.log("제보 데이터:", reportData);
-      alert("제보가 등록되었습니다.");
+      submitReportBtn.disabled = true;
+      submitReportBtn.textContent = "등록 중...";
+
+      try {
+        const response = await fetch("/api/accessibility-reports", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(reportData)
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "제보 등록에 실패했습니다.");
+        }
+
+        alert("제보가 등록되었습니다. 관리자가 확인하면 장소 정보에 반영됩니다.");
+        location.href = indexUrlWithMap();
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        submitReportBtn.disabled = false;
+        submitReportBtn.textContent = "제보하기";
+      }
     });
+
+    function readFileAsDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("사진을 읽을 수 없습니다."));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function indexUrlWithMap(panel) {
+      const center = map.getCenter();
+      const nextParams = new URLSearchParams({
+        mapX: center.getLng(),
+        mapY: center.getLat(),
+        mapLevel: map.getLevel()
+      });
+
+      if (panel) {
+        nextParams.set("panel", panel);
+      }
+
+      return `index.html?${nextParams.toString()}`;
+    }
   </script>
 </body>
 </html>

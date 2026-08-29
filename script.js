@@ -7,6 +7,7 @@ const options = {
 
 const map = new kakao.maps.Map(container, options);
 const placesService = new kakao.maps.services.Places();
+const restoredMapViewFromQuery = restoreMapViewFromQuery();
 
 let markers = [];
 let startPlace = null;
@@ -24,6 +25,46 @@ let currentLocationPosition = null;
 let infoPanelState = "route";
 let nearbyPanelPlaces = [];
 let nearbyPanelKeyword = "주변";
+let currentRouteData = null;
+let selectedPlaceForRoute = null;
+
+// false 일 땐 지도만 보는 중, true 일 땐 실제 길안내 중
+let navigationMode = false;
+let lastNavigationPosition = null;
+
+if (!restoredMapViewFromQuery) {
+  centerMapOnCurrentLocation({
+    setStartPlace: false,
+    updatePanel: false,
+    collapsePanel: false,
+    silentError: true,
+  });
+}
+
+function restoreMapViewFromQuery() {
+  const params = new URLSearchParams(location.search);
+  let restoredCenter = false;
+
+  if (params.has("mapX") && params.has("mapY")) {
+    const mapX = Number(params.get("mapX"));
+    const mapY = Number(params.get("mapY"));
+
+    if (!Number.isNaN(mapX) && !Number.isNaN(mapY)) {
+      map.setCenter(new kakao.maps.LatLng(mapY, mapX));
+      restoredCenter = true;
+    }
+  }
+
+  if (params.has("mapLevel")) {
+    const mapLevel = Number(params.get("mapLevel"));
+
+    if (!Number.isNaN(mapLevel)) {
+      map.setLevel(mapLevel);
+    }
+  }
+
+  return restoredCenter;
+}
 
 const NEARBY_SEARCH_RADIUS = 1000;
 const NEARBY_CATEGORY_CODES = {
@@ -60,6 +101,12 @@ const closeFavoritesPanelBtn = document.getElementById("closeFavoritesPanelBtn")
 const loginNavBtn = document.getElementById("loginNavBtn");
 const cameraNavBtn = document.getElementById("cameraNavBtn");
 const bookmarkNavBtn = document.getElementById("bookmarkNavBtn");
+const weatherBadge = document.getElementById("weatherBadge");
+const weatherIcon = document.getElementById("weatherIcon") || document.querySelector(".weather-icon");
+const weatherTemp = document.getElementById("weatherTemp");
+const weatherSummary = document.getElementById("weatherSummary");
+
+let lastWeatherKey = "";
 
 loadSelectedRouteFromQuery();
 
@@ -74,9 +121,7 @@ if (loginNavBtn) {
 }
 
 if (cameraNavBtn) {
-  cameraNavBtn.addEventListener("click", () => {
-    location.href = "report.html";
-  });
+  cameraNavBtn.addEventListener("click", openReportPanelAtCurrentMap);
 }
 
 if (bookmarkNavBtn) {
@@ -122,10 +167,12 @@ if (favoriteBtn) {
 
 function openFavoritesPage() {
   if (!favoritesPanel) return;
-  hideResultList();
-  placeSheet.classList.add("hidden");
-  filterPanel?.classList.add("hidden");
-  favoritesPanel.classList.remove("hidden");
+  keepCurrentMapView(() => {
+    hideResultList();
+    placeSheet.classList.add("hidden");
+    filterPanel?.classList.add("hidden");
+    favoritesPanel.classList.remove("hidden");
+  });
 }
 
 if (closeFavoritesPanelBtn && favoritesPanel) {
@@ -192,13 +239,90 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (event.target.closest("#routePanelBackBtn")) {
+    if (currentRouteData?.selectedRoute) {
+      updateSelectedRouteSheet(currentRouteData.selectedRoute);
+    } else {
+      updatePlaceSheet();
+    }
+    openPlaceSheet();
+    return;
+  }
+
+  const routeOption = event.target.closest(".route-option");
+  if (routeOption && currentRouteData) {
+    const route =
+      currentRouteData.routes.find((item) => item.id === routeOption.dataset.routeId) ||
+      currentRouteData.routes[0];
+    if (route) {
+      applyRouteSelection(currentRouteData, route);
+    }
+    return;
+  }
+
+  const inlineChip = event.target.closest(".inline-chip");
+  if (inlineChip) {
+    inlineChip
+      .closest(".inline-chip-group")
+      ?.querySelectorAll(".inline-chip")
+      .forEach((chip) => chip.classList.remove("active"));
+    inlineChip.classList.add("active");
+    return;
+  }
+
+  if (event.target.closest("#inlineSubmitReportBtn")) {
+    submitInlineReport();
+    return;
+  }
+
+  if (event.target.closest("#placeReportBtn")) {
+    if (selectedPlaceForRoute) {
+      location.href = reportUrlForPlace(selectedPlaceForRoute);
+    }
+    return;
+  }
+
   if (event.target.closest("#routeListBtn")) {
     if (!startPlace || !endPlace) {
       alert("출발지와 목적지를 모두 선택해주세요.");
       return;
     }
 
-    location.href = `route-list.html?${routeQueryParams()}`;
+    openRouteListPanel();
+    return;
+  }
+
+  const routeRoleButton = event.target.closest("[data-route-role]");
+  if (routeRoleButton && selectedPlaceForRoute) {
+    setRouteEndpoint(selectedPlaceForRoute, routeRoleButton.dataset.routeRole);
+    return;
+  }
+
+  if (event.target.closest("#clearStartPlaceBtn")) {
+    startPlace = null;
+    if (startMarker) {
+      startMarker.setMap(null);
+      startMarker = null;
+    }
+    clearRoutePolylines();
+    clearDangerZones();
+    currentRouteData = null;
+    updatePlaceSheet();
+    openPlaceSheet();
+    return;
+  }
+
+  if (event.target.closest("#clearEndPlaceBtn")) {
+    endPlace = null;
+    if (endMarker) {
+      endMarker.setMap(null);
+      endMarker = null;
+    }
+    clearRoutePolylines();
+    clearDangerZones();
+    currentRouteData = null;
+    updatePlaceSheet();
+    openPlaceSheet();
     return;
   }
 
@@ -208,7 +332,8 @@ document.addEventListener("click", (event) => {
       return;
     }
 
-    location.href = `guidance.html?${routeQueryParams()}`;
+    startNavigationTracking();
+    openPlaceSheet();
   }
 });
 
@@ -220,12 +345,200 @@ function openReportPage() {
     return;
   }
 
-  location.href =
-    `report.html?name=${encodeURIComponent(targetPlace.place_name)}` +
+  location.href = reportUrlForPlace(targetPlace);
+}
+
+function reportUrlForPlace(place) {
+  return (
+    `report.html?v=20260830-accessibility` +
+    `&name=${encodeURIComponent(place.place_name || place.name || "")}` +
     `&address=${encodeURIComponent(
-      targetPlace.road_address_name || targetPlace.address_name || ""
+      place.road_address_name || place.address_name || place.address || ""
     )}` +
-    `&x=${targetPlace.x}&y=${targetPlace.y}`;
+    `&x=${place.x || place.lng}&y=${place.y || place.lat}`
+  );
+}
+
+function openReportAtCurrentLocation() {
+  if (currentLocationPosition) {
+    location.href =
+      "report.html?name=" +
+      encodeURIComponent("현재 위치") +
+      "&address=" +
+      encodeURIComponent("현재 위치에서 제보") +
+      `&x=${currentLocationPosition.getLng()}&y=${currentLocationPosition.getLat()}` +
+      "&v=20260830-accessibility";
+    return;
+  }
+
+  if (!navigator.geolocation) {
+    alert("현재 위치 기능을 지원하지 않는 브라우저입니다.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      location.href =
+        "report.html?name=" +
+        encodeURIComponent("현재 위치") +
+        "&address=" +
+        encodeURIComponent("현재 위치에서 제보") +
+        `&x=${lng}&y=${lat}` +
+        "&v=20260830-accessibility";
+    },
+    () => {
+      alert("현재 위치를 가져올 수 없습니다. 위치 권한을 허용해주세요.");
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    }
+  );
+}
+
+function openReportPanelAtCurrentMap() {
+  keepCurrentMapView(() => {
+    const center = map.getCenter();
+    const lat = center.getLat();
+    const lng = center.getLng();
+
+    hideResultList();
+    favoritesPanel?.classList.add("hidden");
+    filterPanel?.classList.add("hidden");
+    placeSheet?.classList.add("route-sheet");
+    placeSheet?.classList.remove("route-list-sheet");
+
+    panelContent.innerHTML = `
+      <div class="report-panel-inline">
+        <div class="report-panel-heading">
+          <p class="sheet-label">위험 구간 제보</p>
+          <h3>위험 구간 제보</h3>
+          <p class="muted">현재 지도 위치 기준으로 제보합니다.</p>
+        </div>
+
+        <label class="inline-field-label" for="inlineReportLocation">위치</label>
+        <input
+          id="inlineReportLocation"
+          class="inline-field"
+          type="text"
+          value="지도 중심 위치 (${lat.toFixed(6)}, ${lng.toFixed(6)})"
+        />
+
+        <label class="inline-field-label">제보 유형</label>
+        <div class="inline-chip-group" id="inlineReportTypes">
+          <button class="inline-chip active" type="button" data-type="급경사">급경사</button>
+          <button class="inline-chip" type="button" data-type="계단">계단</button>
+          <button class="inline-chip" type="button" data-type="장애물">장애물</button>
+        </div>
+
+        <label class="inline-field-label">휠체어 진입 정보</label>
+        <div class="inline-chip-group" id="inlineAccessibilityTypes">
+          <button class="inline-chip active" type="button" data-accessibility="unknown">확인 필요</button>
+          <button class="inline-chip" type="button" data-accessibility="accessible">진입 가능</button>
+          <button class="inline-chip" type="button" data-accessibility="not_accessible">진입 어려움</button>
+        </div>
+
+        <label class="inline-field-label" for="inlineReportDetail">상세 설명</label>
+        <textarea
+          id="inlineReportDetail"
+          class="inline-field inline-textarea"
+          placeholder="어떤 위험이 있었나요?"
+        ></textarea>
+
+        <label class="inline-field-label" for="inlineReportImage">사진 첨부</label>
+        <label class="inline-upload-box" for="inlineReportImage" id="inlineReportUploadBox">
+          사진 촬영 또는 앨범에서 선택
+          <input id="inlineReportImage" type="file" accept="image/*" capture="environment" />
+        </label>
+
+        <button class="primary-btn inline-submit-btn" id="inlineSubmitReportBtn" type="button">
+          제보하기
+        </button>
+      </div>
+    `;
+
+    const imageInput = document.getElementById("inlineReportImage");
+    const uploadBox = document.getElementById("inlineReportUploadBox");
+
+    imageInput?.addEventListener("change", () => {
+      if (imageInput.files.length > 0) {
+        uploadBox.childNodes[0].nodeValue = imageInput.files[0].name;
+      }
+    });
+
+    openPlaceSheet();
+  });
+}
+
+async function submitInlineReport() {
+  const submitButton = document.getElementById("inlineSubmitReportBtn");
+  const imageInput = document.getElementById("inlineReportImage");
+  const locationInput = document.getElementById("inlineReportLocation");
+  const detailInput = document.getElementById("inlineReportDetail");
+  const center = map.getCenter();
+  const selectedType =
+    document.querySelector("#inlineReportTypes .inline-chip.active")?.dataset.type || "기타";
+  const wheelchairAccess =
+    document.querySelector("#inlineAccessibilityTypes .inline-chip.active")?.dataset.accessibility ||
+    "unknown";
+  const imageData = imageInput?.files?.[0]
+    ? await readImageFileAsDataURL(imageInput.files[0])
+    : "";
+
+  submitButton.disabled = true;
+  submitButton.textContent = "등록 중...";
+
+  try {
+    const response = await fetch("/api/accessibility-reports", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        placeName: locationInput?.value || "지도 중심 위치",
+        address: locationInput?.value || "지도 중심 위치",
+        x: center.getLng(),
+        y: center.getLat(),
+        type: selectedType,
+        wheelchairAccess,
+        detail: detailInput?.value || "",
+        imageData,
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "제보 등록에 실패했습니다.");
+    }
+
+    alert("제보가 등록되었습니다. 관리자가 확인하면 장소 정보에 반영됩니다.");
+    collapsePlaceSheet();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "제보하기";
+  }
+}
+
+function readImageFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("사진을 읽을 수 없습니다."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function keepCurrentMapView(callback) {
+  const center = map.getCenter();
+  const level = map.getLevel();
+  callback();
+  map.setCenter(center);
+  map.setLevel(level);
 }
 
 function searchPlaces(keyword) {
@@ -381,7 +694,7 @@ function renderResultList(places) {
     `;
 
     item.addEventListener("click", () => {
-      selectPlace(place);
+      showPlaceSelectionPanel(place);
       smoothMoveTo(new kakao.maps.LatLng(place.y, place.x));
       hideResultList();
     });
@@ -396,27 +709,74 @@ function hideResultList() {
   resultList.classList.add("hidden");
 }
 
-function selectPlace(place) {
-  if (!startPlace) {
+function showPlaceSelectionPanel(place) {
+  selectedPlaceForRoute = place;
+  infoPanelState = "place-select";
+  if (!panelContent) return;
+
+  placeSheet?.classList.remove("route-list-sheet");
+  placeSheet?.classList.add("route-sheet");
+
+  panelContent.innerHTML = `
+    <div class="place-select-panel">
+      <p class="sheet-label">&#51109;&#49548; &#49440;&#53469;</p>
+      <h3>${escapeHTML(place.place_name || "\uC774\uB984 \uC5C6\uC74C")}</h3>
+      <p class="muted">${escapeHTML(place.road_address_name || place.address_name || "\uC8FC\uC18C \uC815\uBCF4 \uC5C6\uC74C")}</p>
+
+      <div class="route-endpoint-summary">
+        ${routeEndpointSummary()}
+      </div>
+
+      <div class="place-select-actions">
+        <button class="secondary-btn" type="button" data-route-role="start">&#52636;&#48156;&#51648;&#47196;</button>
+        <button class="primary-btn" type="button" data-route-role="end">&#47785;&#51201;&#51648;&#47196;</button>
+      </div>
+      <button class="report-link-btn place-report-btn" id="placeReportBtn" type="button">
+        이 장소 제보하기
+      </button>
+    </div>
+  `;
+
+  openPlaceSheet();
+}
+
+function setRouteEndpoint(place, role) {
+  if (role === "start") {
     startPlace = place;
     updateStartMarker(place);
-    alert(`출발지 설정: ${place.place_name}`);
-  } else if (!endPlace) {
-    endPlace = place;
-    updateEndMarker(place);
-    document.body.classList.add("route-mode");
   } else {
     endPlace = place;
     updateEndMarker(place);
-    document.body.classList.add("route-mode");
   }
 
+  selectedPlaceForRoute = null;
+  currentRouteData = null;
+  clearRoutePolylines();
+  clearDangerZones();
   updatePlaceSheet();
-  openPlaceSheet();
 
   if (startPlace && endPlace) {
+    document.body.classList.add("route-mode");
+    openPlaceSheet();
     drawDefaultRouteFromSelection();
+  } else {
+    openPlaceSheet();
   }
+}
+
+function routeEndpointSummary() {
+  return `
+    <div class="route-endpoint-row">
+      <span>&#52636;&#48156;</span>
+      <strong>${escapeHTML(startPlace?.place_name || "\uC544\uC9C1 \uC120\uD0DD \uC548 \uD568")}</strong>
+      ${startPlace ? '<button type="button" id="clearStartPlaceBtn">&#48320;&#44221;</button>' : ""}
+    </div>
+    <div class="route-endpoint-row">
+      <span>&#46020;&#52265;</span>
+      <strong>${escapeHTML(endPlace?.place_name || "\uC544\uC9C1 \uC120\uD0DD \uC548 \uD568")}</strong>
+      ${endPlace ? '<button type="button" id="clearEndPlaceBtn">&#48320;&#44221;</button>' : ""}
+    </div>
+  `;
 }
 
 function routeQueryParams() {
@@ -468,10 +828,11 @@ async function loadSelectedRouteFromQuery() {
       address_name: data.destination.name,
     };
 
+    syncRouteEndpoints(data, route);
     updateStartMarker(startPlace);
     updateEndMarker(endPlace);
     drawRoute({ path: route.path, colored: true });
-    drawDangerZones(dangerZonesFromRoute(route.path));
+    drawDangerZones(routeDangerZones(route));
     updateSelectedRouteSheet(route);
     updateRouteInfo({
       distance: route.distance,
@@ -480,6 +841,10 @@ async function loadSelectedRouteFromQuery() {
     updateDangerCount(route.dangerCount);
     updateSafetyRatio(route);
 
+    currentRouteData = {
+      ...data,
+      selectedRoute: route,
+    };
     document.body.classList.add("route-mode");
     openPlaceSheet();
   } catch (error) {
@@ -504,8 +869,11 @@ async function drawDefaultRouteFromSelection() {
       throw new Error("사용 가능한 경로가 없습니다.");
     }
 
+    syncRouteEndpoints(data, route);
+    updateStartMarker(startPlace);
+    updateEndMarker(endPlace);
     drawRoute({ path: route.path, colored: true });
-    drawDangerZones(dangerZonesFromRoute(route.path));
+    drawDangerZones(routeDangerZones(route));
     updateSelectedRouteSheet(route);
     updateRouteInfo({
       distance: route.distance,
@@ -513,9 +881,123 @@ async function drawDefaultRouteFromSelection() {
     });
     updateDangerCount(route.dangerCount);
     updateSafetyRatio(route);
+    currentRouteData = {
+      ...data,
+      selectedRoute: route,
+    };
   } catch (error) {
     console.error("기본 경로 로딩 실패:", error);
     alert(error.message);
+  }
+}
+
+async function openRouteListPanel() {
+  try {
+    let data = currentRouteData;
+
+    if (!data?.routes?.length) {
+      const response = await fetch(`/api/access-routes?${routeQueryParams()}`);
+      data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "경로를 불러오지 못했습니다.");
+      }
+    }
+
+    currentRouteData = {
+      ...data,
+      selectedRoute: data.selectedRoute || currentRouteData?.selectedRoute || data.routes[0],
+    };
+    renderRouteListPanel(currentRouteData);
+    openPlaceSheet();
+  } catch (error) {
+    console.error("경로 목록 로딩 실패:", error);
+    alert(error.message);
+  }
+}
+
+function renderRouteListPanel(data) {
+  infoPanelState = "route-list";
+  if (!panelContent) return;
+  placeSheet?.classList.add("route-sheet", "route-list-sheet");
+
+  const routes = data.routes || [];
+  const summaryTitle = `${data.destination?.name || endPlace?.place_name || "목적지"}까지 경로 ${routes.length}개`;
+  const routeItems = routes
+    .map((route) => {
+      const selected = route.id === data.selectedRoute?.id ? " selected" : "";
+      const danger = route.dangerCount ? " danger" : "";
+      return `
+        <button class="route-option${selected}${danger}" type="button" data-route-id="${escapeHTML(route.id)}">
+          <span class="route-option-bar" aria-hidden="true"></span>
+          <span class="route-option-body">
+            <strong>${escapeHTML(route.title)}</strong>
+            <span>${route.duration}분 · ${route.distance}m · 계단 ${route.features.stairs}개 · 경사로 ${route.features.ramps}개 · 횡단보도 ${route.features.crosswalks}개</span>
+          </span>
+        </button>
+      `;
+    })
+    .join("");
+
+  panelContent.innerHTML = `
+    <button class="panel-back-button" id="routePanelBackBtn" type="button">← 경로로 돌아가기</button>
+    <div class="route-list-panel-heading">
+      <p class="sheet-label">경로 목록</p>
+      <h3>${escapeHTML(summaryTitle)}</h3>
+    </div>
+    <div class="route-options">
+      ${routeItems}
+    </div>
+  `;
+}
+
+function applyRouteSelection(data, route) {
+  currentRouteData = {
+    ...data,
+    selectedRoute: route,
+  };
+
+  syncRouteEndpoints(data, route);
+  updateStartMarker(startPlace);
+  updateEndMarker(endPlace);
+  drawRoute({ path: route.path, colored: true });
+  drawDangerZones(routeDangerZones(route));
+  updateSelectedRouteSheet(route);
+  updateRouteInfo({
+    distance: route.distance,
+    duration: route.duration * 60,
+  });
+  updateDangerCount(route.dangerCount);
+  updateSafetyRatio(route);
+  document.body.classList.add("route-mode");
+  openPlaceSheet();
+}
+
+function syncRouteEndpoints(data, route) {
+  const path = route?.path || [];
+  const routeStart = path[0];
+  const routeEnd = path[path.length - 1];
+
+  if (data.start) {
+    startPlace = {
+      ...startPlace,
+      place_name: data.start.name || startPlace?.place_name || "",
+      y: routeStart?.lat ?? data.start.lat,
+      x: routeStart?.lng ?? data.start.lng,
+      road_address_name: startPlace?.road_address_name || "",
+      address_name: data.start.name || startPlace?.address_name || "",
+    };
+  }
+
+  if (data.destination) {
+    endPlace = {
+      ...endPlace,
+      place_name: data.destination.name || endPlace?.place_name || "",
+      y: routeEnd?.lat ?? data.destination.lat,
+      x: routeEnd?.lng ?? data.destination.lng,
+      road_address_name: endPlace?.road_address_name || "",
+      address_name: data.destination.name || endPlace?.address_name || "",
+    };
   }
 }
 
@@ -641,30 +1123,44 @@ function resetPlaceSheet() {
   updateSafetyRatio({ path: [] });
 }
 
-function moveToCurrentLocation() {
-  if (!navigator.geolocation) {
-    alert("이 브라우저는 현재 위치 기능을 지원하지 않습니다.");
+function centerMapOnCurrentLocation({
+  setStartPlace = true,
+  updatePanel = true,
+  collapsePanel = true,
+  silentError = false,
+} = {}) {
+  const isLocalhost =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+  if (!window.isSecureContext && !isLocalhost) {
+    if (!silentError) {
+      alert("휴대폰 브라우저에서 현재 위치를 쓰려면 HTTPS 주소가 필요합니다.");
+    }
     return;
   }
 
-  if (currentWatchId !== null) {
-    navigator.geolocation.clearWatch(currentWatchId);
+  if (!navigator.geolocation) {
+    if (!silentError) {
+      alert("현재 위치 기능을 지원하지 않는 브라우저입니다.");
+    }
+    return;
   }
 
-  currentWatchId = navigator.geolocation.watchPosition(
+  navigator.geolocation.getCurrentPosition(
     (position) => {
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
-
       const currentPosition = new kakao.maps.LatLng(lat, lng);
 
-      startPlace = {
-        place_name: "현재 위치",
-        y: lat,
-        x: lng,
-        road_address_name: "",
-        address_name: "현재 위치에서 출발",
-      };
+      if (setStartPlace) {
+        startPlace = {
+          place_name: "현재 위치",
+          y: lat,
+          x: lng,
+          road_address_name: "",
+          address_name: "현재 위치에서 출발",
+        };
+      }
 
       smoothMoveTo(currentPosition);
 
@@ -673,11 +1169,19 @@ function moveToCurrentLocation() {
       }, 700);
 
       updateCurrentLocationMarker(lat, lng);
-      updatePlaceSheet();
-      collapsePlaceSheet();
+
+      if (updatePanel) {
+        updatePlaceSheet();
+      }
+
+      if (collapsePanel) {
+        collapsePlaceSheet();
+      }
     },
     () => {
-      alert("현재 위치를 가져올 수 없습니다. 위치 권한을 허용해주세요.");
+      if (!silentError) {
+        alert("현재 위치를 가져올 수 없습니다. 위치 권한을 허용해주세요.");
+      }
     },
     {
       enableHighAccuracy: true,
@@ -685,6 +1189,82 @@ function moveToCurrentLocation() {
       maximumAge: 0,
     }
   );
+}
+
+function moveToCurrentLocation() {
+  centerMapOnCurrentLocation();
+}
+
+function startNavigationTracking() {
+  if (!navigator.geolocation) {
+    alert("현재 위치 기능을 지원하지 않습니다.");
+    return;
+  }
+
+  // 이미 GPS 추적 중이라면 기존 추적 중지
+  if (currentWatchId !== null) {
+    navigator.geolocation.clearWatch(currentWatchId);
+  }
+
+  navigationMode = true;
+
+  currentWatchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+
+      const currentPosition = new kakao.maps.LatLng(lat, lng);
+
+      // 현재 위치 저장
+      currentLocationPosition = currentPosition;
+
+      // 현재 위치 마커 이동
+      updateCurrentLocationMarker(lat, lng);
+
+      // 안내 중이라면 지도 중심도 현재 위치를 따라감
+      if (navigationMode) {
+        map.setCenter(currentPosition);
+        map.setLevel(3);
+      }
+
+      lastNavigationPosition = currentPosition;
+
+      console.log("현재 위치:", lat, lng);
+    },
+
+    (error) => {
+      console.error("GPS 오류:", error);
+
+      if (error.code === 1) {
+        alert("위치 권한이 거부되었습니다.");
+      } else if (error.code === 2) {
+        alert("현재 위치를 확인할 수 없습니다.");
+      } else if (error.code === 3) {
+        console.warn("위치 확인 시간이 초과되었습니다.");
+      }
+    },
+
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    }
+  );
+}
+
+
+// 길안내 중지
+function stopNavigationTracking() {
+  navigationMode = false;
+
+  if (currentWatchId !== null) {
+    navigator.geolocation.clearWatch(currentWatchId);
+    currentWatchId = null;
+  }
+
+  lastNavigationPosition = null;
+
+  console.log("길안내 종료");
 }
 
 function smoothMoveTo(targetPosition) {
@@ -739,64 +1319,118 @@ function updateCurrentLocationMarker(lat, lng) {
   } else {
     currentLocationMarker.setPosition(position);
   }
+
+  updateWeatherBadge(lat, lng);
+}
+
+async function updateWeatherBadge(lat, lng) {
+  if (!weatherBadge || !weatherTemp || !weatherSummary) return;
+
+  const weatherKey = `${Number(lat).toFixed(2)},${Number(lng).toFixed(2)}`;
+  if (weatherKey === lastWeatherKey) return;
+  lastWeatherKey = weatherKey;
+
+  weatherBadge.classList.remove("hidden");
+  weatherTemp.textContent = "--°";
+  weatherSummary.textContent = "";
+  if (weatherIcon) weatherIcon.textContent = "";
+
+  try {
+    const params = new URLSearchParams({ lat, lng });
+    const response = await fetch(`/api/weather?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "날씨 정보를 불러오지 못했습니다.");
+    }
+
+    const weather = data.weather;
+    const temp = weather.temperature;
+
+    if (weatherIcon) weatherIcon.textContent = "";
+    weatherTemp.textContent = temp === null ? "--°" : `${Math.round(temp)}°`;
+    weatherSummary.textContent = "";
+  } catch (error) {
+    console.warn("Weather badge error:", error);
+    weatherTemp.textContent = "--°";
+    weatherSummary.textContent = "";
+    if (weatherIcon) weatherIcon.textContent = "";
+  }
 }
 
 function updatePlaceSheet() {
-  if (!startPlace && !endPlace) return;
-
   if (startPlace && endPlace) {
-    renderRoutePanel(`${endPlace.place_name}까지`, "");
+    renderRoutePanel(`${endPlace.place_name}\uAE4C\uC9C0`, "");
   } else if (startPlace) {
     renderRoutePanel(
-      `출발지: ${startPlace.place_name}`,
-      startPlace.road_address_name || startPlace.address_name || "주소 정보 없음"
+      `\uCD9C\uBC1C\uC9C0: ${startPlace.place_name}`,
+      startPlace.road_address_name || startPlace.address_name || "\uC8FC\uC18C \uC815\uBCF4 \uC5C6\uC74C"
+    );
+  } else if (endPlace) {
+    renderRoutePanel(
+      `\uBAA9\uC801\uC9C0: ${endPlace.place_name}`,
+      endPlace.road_address_name || endPlace.address_name || "\uC8FC\uC18C \uC815\uBCF4 \uC5C6\uC74C"
     );
   } else {
-    renderRoutePanel(
-      `목적지: ${endPlace.place_name}`,
-      endPlace.road_address_name || endPlace.address_name || "주소 정보 없음"
-    );
+    renderRoutePanel("\uCD9C\uBC1C\uC9C0\uC640 \uBAA9\uC801\uC9C0\uB97C \uC120\uD0DD\uD574\uC8FC\uC138\uC694", "\uC7A5\uC18C\uB97C \uAC80\uC0C9\uD55C \uB4A4 \uCD9C\uBC1C\uC9C0 \uB610\uB294 \uBAA9\uC801\uC9C0\uB85C \uC9C0\uC815\uD560 \uC218 \uC788\uC5B4\uC694.");
   }
 }
 
 function renderRoutePanel(title, subtitle = "") {
   infoPanelState = "route";
   if (!panelContent) return;
+  placeSheet?.classList.add("route-sheet");
+  placeSheet?.classList.remove("route-list-sheet");
+
+  const hasBothEndpoints = Boolean(startPlace && endPlace);
+  const routeDetails = hasBothEndpoints
+    ? `
+      <div class="info-cards">
+        <div class="info-card">
+          <strong>-</strong>
+          <span>&#50696;&#49345; &#49884;&#44036;</span>
+        </div>
+        <div class="info-card">
+          <strong>-</strong>
+          <span>&#44144;&#47532;</span>
+        </div>
+        <div class="info-card danger">
+          <strong>-</strong>
+          <span>&#50948;&#54744; &#44396;&#44036;</span>
+        </div>
+      </div>
+
+      <div class="safety-bar">
+        <div class="safe"></div>
+        <div class="warn"></div>
+      </div>
+
+      <div class="safety-labels">
+        <span>&#50504;&#51204;</span>
+        <span>&#51452;&#51032;</span>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="secondary-btn" id="routeListBtn" type="button">&#44221;&#47196; &#47785;&#47197;</button>
+        <button class="primary-btn" id="startRouteBtn" type="button">&#50504;&#45236; &#49884;&#51089;</button>
+      </div>
+    `
+    : `
+      <div class="route-next-step">
+        <p>${startPlace ? "\uBAA9\uC801\uC9C0\uB97C \uAC80\uC0C9\uD574\uC11C \uC120\uD0DD\uD574\uC8FC\uC138\uC694." : "\uCD9C\uBC1C\uC9C0\uB97C \uAC80\uC0C9\uD574\uC11C \uC120\uD0DD\uD574\uC8FC\uC138\uC694."}</p>
+      </div>
+    `;
 
   panelContent.innerHTML = `
-    <p class="sheet-label">선택한 목적지</p>
+    <p class="sheet-label">&#44221;&#47196; &#49444;&#51221;</p>
     <h3 id="placeName">${escapeHTML(title)}</h3>
     <p id="placeAddress" class="muted">${escapeHTML(subtitle)}</p>
 
-    <div class="info-cards">
-      <div class="info-card">
-        <strong>3분</strong>
-        <span>예상 시간</span>
-      </div>
-      <div class="info-card">
-        <strong>100m</strong>
-        <span>거리</span>
-      </div>
-      <div class="info-card danger">
-        <strong>2곳</strong>
-        <span>위험 구간</span>
-      </div>
+    <div class="route-endpoint-summary compact">
+      ${routeEndpointSummary()}
     </div>
 
-    <div class="safety-bar">
-      <div class="safe"></div>
-      <div class="warn"></div>
-    </div>
-
-    <div class="safety-labels">
-      <span>안전 20%</span>
-      <span>주의 80%</span>
-    </div>
-
-    <div class="sheet-actions">
-      <button class="secondary-btn" id="routeListBtn">경로 목록</button>
-      <button class="primary-btn" id="startRouteBtn">안내 시작</button>
-    </div>
+    ${routeDetails}
   `;
 }
 
@@ -805,20 +1439,21 @@ function renderNearbyPanel(places, keyword = "주변") {
   nearbyPanelPlaces = places;
   nearbyPanelKeyword = keyword;
   if (!panelContent) return;
+  placeSheet?.classList.remove("route-sheet", "route-list-sheet");
 
   const cards = places
     .map((place, index) => {
       const category = placeCategory(place);
       return `
         <article class="nearby-place-card" data-index="${index}">
-          <div class="nearby-photo" aria-hidden="true"></div>
+          ${nearbyPhotoMarkup(index, "list")}
           <div class="nearby-place-body">
             <div class="nearby-title-row">
               <h4>${escapeHTML(place.place_name || "이름 없음")}</h4>
               <span>${escapeHTML(category)}</span>
             </div>
             <p>${escapeHTML(formatPlaceDistance(place))}</p>
-            <p class="nearby-accessibility">${escapeHTML(accessibilityLabel(place))}</p>
+            <p class="nearby-accessibility" data-accessibility-index="${index}">${escapeHTML(accessibilityLabel(place))}</p>
           </div>
         </article>
       `;
@@ -835,11 +1470,16 @@ function renderNearbyPanel(places, keyword = "주변") {
       ${cards}
     </div>
   `;
+
+  loadNearbyPlacePhotos(places);
+  loadNearbyAccessibility(places);
 }
 
 function showNearbyPlaceDetail(place) {
   infoPanelState = "detail";
+  selectedPlaceForRoute = place;
   if (!panelContent) return;
+  placeSheet?.classList.remove("route-sheet", "route-list-sheet");
 
   const position = new kakao.maps.LatLng(place.y, place.x);
   smoothMoveTo(position);
@@ -850,18 +1490,30 @@ function showNearbyPlaceDetail(place) {
 
   panelContent.innerHTML = `
     <button class="panel-back-button" id="nearbyBackBtn" type="button">← 목록</button>
-    <div class="nearby-detail-photo" aria-hidden="true"></div>
+    ${nearbyPhotoMarkup(0, "detail")}
     <div class="nearby-detail">
       <p class="sheet-label">${escapeHTML(placeCategory(place))}</p>
       <h3>${escapeHTML(place.place_name || "이름 없음")}</h3>
       <p class="muted">${escapeHTML(place.road_address_name || place.address_name || "주소 정보 없음")}</p>
       <div class="nearby-detail-meta">
         <span>${escapeHTML(formatPlaceDistance(place))}</span>
-        <span>${escapeHTML(accessibilityLabel(place))}</span>
+        <span data-accessibility-detail>${escapeHTML(accessibilityLabel(place))}</span>
       </div>
+      <div class="route-endpoint-summary">
+        ${routeEndpointSummary()}
+      </div>
+      <div class="place-select-actions">
+        <button class="secondary-btn" type="button" data-route-role="start">&#52636;&#48156;&#51648;&#47196;</button>
+        <button class="primary-btn" type="button" data-route-role="end">&#47785;&#51201;&#51648;&#47196;</button>
+      </div>
+      <button class="report-link-btn place-report-btn" id="placeReportBtn" type="button">
+        이 장소 제보하기
+      </button>
     </div>
   `;
 
+  loadPlacePhoto(place, panelContent.querySelector("[data-photo-target]"), "detail");
+  loadPlaceAccessibility(place, panelContent.querySelector("[data-accessibility-detail]"));
   openPlaceSheet();
 }
 
@@ -899,13 +1551,115 @@ function formatDistance(meters) {
 }
 
 function accessibilityLabel(place) {
-  const category = placeCategory(place);
-
-  if (category.includes("병원") || category.includes("약국")) {
-    return "휠체어 진입 정보 확인 필요";
+  if (place?.accessibilityStatus) {
+    return accessibilityTextFromStatus(place.accessibilityStatus);
   }
 
-  return "휠체어 진입 가능";
+  return "휠체어 진입 정보 확인 필요";
+}
+
+function accessibilityTextFromStatus(status) {
+  if (status === "accessible") return "휠체어 진입 가능";
+  if (status === "not_accessible") return "휠체어 진입 어려움";
+  return "휠체어 진입 정보 확인 필요";
+}
+
+function nearbyPhotoMarkup(index, variant = "list") {
+  const className = variant === "detail" ? "nearby-detail-photo" : "nearby-photo";
+  return `
+    <div class="${className} nearby-photo-placeholder" data-photo-target data-photo-index="${index}" aria-hidden="true">
+      <span></span>
+    </div>
+  `;
+}
+
+function loadNearbyPlacePhotos(places) {
+  places.forEach((place, index) => {
+    const target = panelContent?.querySelector(`[data-photo-index="${index}"]`);
+    loadPlacePhoto(place, target, "list");
+  });
+}
+
+function loadNearbyAccessibility(places) {
+  places.forEach((place, index) => {
+    const target = panelContent?.querySelector(`[data-accessibility-index="${index}"]`);
+    loadPlaceAccessibility(place, target);
+  });
+}
+
+async function loadPlaceAccessibility(place, target) {
+  if (!target || !place) return;
+
+  const params = new URLSearchParams({
+    name: place.place_name || place.name || "",
+    address: place.road_address_name || place.address_name || place.address || "",
+    lat: place.y || place.lat || "",
+    lng: place.x || place.lng || "",
+  });
+
+  try {
+    const response = await fetch(`/api/place-accessibility?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) return;
+
+    place.accessibilityStatus = data.status;
+    target.textContent = data.label || accessibilityTextFromStatus(data.status);
+    target.classList.toggle("is-verified", Boolean(data.verified));
+  } catch (error) {
+    console.warn("Failed to load accessibility status:", error);
+  }
+}
+
+async function loadPlacePhoto(place, target, variant = "list") {
+  if (!target || !place) return;
+
+  const params = new URLSearchParams({
+    name: place.place_name || "",
+    address: place.road_address_name || place.address_name || "",
+    lat: place.y || "",
+    lng: place.x || "",
+    maxWidthPx: variant === "detail" ? "720" : "360",
+  });
+
+  try {
+    const response = await fetch(`/api/place-photo?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok || !data.ok || !data.photoUri) {
+      target.classList.add("no-photo");
+      return;
+    }
+
+    const img = document.createElement("img");
+    img.src = data.photoUri;
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+
+    target.replaceChildren(img);
+    const attribution = googlePhotoAttribution(data.attributions);
+    if (attribution) {
+      target.insertAdjacentHTML("beforeend", attribution);
+    }
+    target.classList.remove("nearby-photo-placeholder", "no-photo");
+    target.classList.add("has-photo");
+  } catch (error) {
+    console.warn("Failed to load place photo:", error);
+    target.classList.add("no-photo");
+  }
+}
+
+function googlePhotoAttribution(attributions = []) {
+  const names = attributions
+    .map((item) => item.displayName)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (!names.length) return "";
+
+  return `<span class="photo-attribution">${escapeHTML(names.join(", "))}</span>`;
 }
 
 function escapeHTML(value) {
@@ -1016,7 +1770,7 @@ function clearRoutePolylines() {
 function routeSegmentColor(fromNode, toNode) {
   const types = [fromNode?.type, toNode?.type];
 
-  if (types.includes("stair")) {
+  if (types.includes("stair") || types.includes("danger")) {
     return "#f26a6a";
   }
 
@@ -1029,6 +1783,14 @@ function routeSegmentColor(fromNode, toNode) {
   }
 
   return "#48d10f";
+}
+
+function routeDangerZones(route) {
+  if (Array.isArray(route?.dangerZones) && route.dangerZones.length) {
+    return route.dangerZones;
+  }
+
+  return dangerZonesFromRoute(route?.path || []);
 }
 
 function dangerZonesFromRoute(path) {
@@ -1137,7 +1899,7 @@ function updateRouteInfo(summary) {
       : `${(distance / 1000).toFixed(1)}km`;
 
   const minutes = Math.ceil(duration / 60);
-  const timeText = minutes > 0 ? `${minutes}분` : "-";
+  const timeText = minutes > 0 ? `${minutes}\uBD84` : "-";
 
   const timeCard = document.querySelector(".info-card:nth-child(1) strong");
   const distanceCard = document.querySelector(".info-card:nth-child(2) strong");
@@ -1150,7 +1912,7 @@ function updateDangerCount(count) {
   const dangerCard = document.querySelector(".info-card:nth-child(3) strong");
 
   if (dangerCard) {
-    dangerCard.innerText = `${count}곳`;
+    dangerCard.innerText = `${count}\uACF3`;
   }
 }
 

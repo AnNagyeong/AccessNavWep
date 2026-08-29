@@ -4,15 +4,23 @@ require("dotenv").config({ path: ".env" });
 
 const express = require("express");
 const path = require("path");
+const fs = require("fs/promises");
 const mysql = require("mysql2/promise");
 const { randomUUID } = require("crypto");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const MAX_NEARBY_ROUTE_TARGET_DISTANCE = 150;
+const DATA_DIR = path.join(__dirname, "data");
+const ACCESSIBILITY_REPORTS_FILE = path.join(DATA_DIR, "accessibility-reports.json");
+const PLACE_ACCESSIBILITY_FILE = path.join(DATA_DIR, "place-accessibility.json");
 
 const ORS_API_KEY = process.env.ORS_API_KEY;
+const GOOGLE_PLACES_API_KEY =
+  process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+const googlePhotoCache = new Map();
 
-app.use(express.json());
+app.use(express.json({ limit: "8mb" }));
 
 app.use((req, res, next) => {
   console.log("요청 들어옴:", req.method, req.url);
@@ -27,6 +35,18 @@ const db = mysql.createPool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD || process.env.DB_PASS,
   database: process.env.DB_NAME,
+});
+
+const mapServiceDb = mysql.createPool({
+  host: process.env.MAPSERVICE_DB_HOST || process.env.DB_HOST,
+  port: Number(process.env.MAPSERVICE_DB_PORT || process.env.DB_PORT || 3306),
+  user: process.env.MAPSERVICE_DB_USER || process.env.DB_USER,
+  password:
+    process.env.MAPSERVICE_DB_PASSWORD ||
+    process.env.MAPSERVICE_DB_PASS ||
+    process.env.DB_PASSWORD ||
+    process.env.DB_PASS,
+  database: process.env.MAPSERVICE_DB_NAME || "barrier_free_db",
 });
 
 function uuidToBuffer(uuid) {
@@ -160,6 +180,87 @@ app.get("/api/walking-route", async (req, res) => {
   }
 });
 
+app.get("/api/weather", async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+
+    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      return res.status(400).json({
+        ok: false,
+        error: "lat, lng 값이 필요합니다.",
+      });
+    }
+
+    const weatherUrl = new URL("https://api.open-meteo.com/v1/forecast");
+    weatherUrl.searchParams.set("latitude", String(lat));
+    weatherUrl.searchParams.set("longitude", String(lng));
+    weatherUrl.searchParams.set(
+      "current",
+      [
+        "temperature_2m",
+        "apparent_temperature",
+        "precipitation",
+        "rain",
+        "snowfall",
+        "weather_code",
+        "wind_speed_10m",
+      ].join(",")
+    );
+    weatherUrl.searchParams.set(
+      "daily",
+      [
+        "temperature_2m_max",
+        "temperature_2m_min",
+        "precipitation_probability_max",
+        "precipitation_sum",
+      ].join(",")
+    );
+    weatherUrl.searchParams.set("forecast_days", "1");
+    weatherUrl.searchParams.set("timezone", "auto");
+
+    const response = await fetch(weatherUrl);
+    const text = await response.text();
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        ok: false,
+        error: text,
+      });
+    }
+
+    const data = JSON.parse(text);
+    const current = data.current || {};
+    const daily = data.daily || {};
+    const code = Number(current.weather_code);
+
+    res.json({
+      ok: true,
+      weather: {
+        temperature: roundWeatherValue(current.temperature_2m),
+        apparentTemperature: roundWeatherValue(current.apparent_temperature),
+        windSpeed: roundWeatherValue(current.wind_speed_10m),
+        precipitation: roundWeatherValue(current.precipitation),
+        rain: roundWeatherValue(current.rain),
+        snowfall: roundWeatherValue(current.snowfall),
+        precipitationProbability: daily.precipitation_probability_max?.[0] ?? null,
+        temperatureMax: roundWeatherValue(daily.temperature_2m_max?.[0]),
+        temperatureMin: roundWeatherValue(daily.temperature_2m_min?.[0]),
+        code,
+        label: weatherCodeLabel(code),
+        icon: weatherCodeIcon(code),
+        time: current.time || null,
+      },
+    });
+  } catch (err) {
+    console.error("Open-Meteo weather error:", err);
+    res.status(500).json({
+      ok: false,
+      error: err.message,
+    });
+  }
+});
+
 async function fetchWalkingRouteFromORS(origin, destination) {
   if (!ORS_API_KEY) {
     throw new Error("ORS_API_KEY가 .env에 설정되지 않았습니다.");
@@ -192,6 +293,81 @@ async function fetchWalkingRouteFromORS(origin, destination) {
 }
 
 // ================= 배리어프리 키오스크 API =================
+
+async function buildOrsAccessRoute(startName, destinationName, startPoint, destinationPoint) {
+  const routeData = await fetchWalkingRouteFromORS(
+    { x: startPoint.lng, y: startPoint.lat },
+    { x: destinationPoint.lng, y: destinationPoint.lat }
+  );
+  const feature = routeData.features?.[0];
+  const coords = feature?.geometry?.coordinates || [];
+  const summary = feature?.properties?.summary || {};
+  const routePath = coords.map(([lng, lat], index) => ({
+    id: `ors-${index}`,
+    name:
+      index === 0
+        ? startName || "출발지"
+        : index === coords.length - 1
+          ? destinationName || "목적지"
+          : "도보 경로",
+    lat,
+    lng,
+    type: "path",
+  }));
+
+  let hitZones = [];
+
+  try {
+    const rawReports = await fetchDangerReportsFromMapService();
+    const dangerZones = normalizeDangerZones(rawReports);
+    hitZones = findDangerZonesOnRoute(routePath, dangerZones);
+  } catch (err) {
+    console.warn("MapService 위험 구간 조회 실패:", err.message);
+  }
+
+  const dangerPath = routePath.map((point) => ({
+    ...point,
+    type: hitZones.some(
+      (zone) => getDistance(point.lat, point.lng, zone.lat, zone.lng) <= zone.radius
+    )
+      ? "danger"
+      : point.type,
+  }));
+
+  return {
+    ok: true,
+    start: {
+      id: "ors-start",
+      name: startName || "출발지",
+      lat: startPoint.lat,
+      lng: startPoint.lng,
+    },
+    destination: {
+      id: "ors-destination",
+      name: destinationName || "목적지",
+      lat: destinationPoint.lat,
+      lng: destinationPoint.lng,
+    },
+    routes: [
+      {
+        id: "walking",
+        title: "도보 경로",
+        distance: Math.round(Number(summary.distance || 0)),
+        duration: Math.max(1, Math.ceil(Number(summary.duration || 0) / 60)),
+        dangerCount: hitZones.length,
+        dangerZones: hitZones,
+        features: {
+          stairs: 0,
+          ramps: 0,
+          elevators: 0,
+          crosswalks: 0,
+        },
+        path: dangerPath,
+      },
+    ],
+  };
+}
+
 
 app.get("/api/barrier-free-kiosks", async (req, res) => {
   try {
@@ -338,6 +514,349 @@ const MAPSERVICE_BASE_URL =
 const MAPSERVICE_REPORTS_ENDPOINT =
   process.env.MAPSERVICE_REPORTS_ENDPOINT || "/api/reports";
 
+const MAPSERVICE_ACCESSIBILITY_REPORTS_ENDPOINT =
+  process.env.MAPSERVICE_ACCESSIBILITY_REPORTS_ENDPOINT || "";
+
+const MAPSERVICE_PLACE_ACCESSIBILITY_ENDPOINT =
+  process.env.MAPSERVICE_PLACE_ACCESSIBILITY_ENDPOINT || "";
+
+async function handlePlacePhoto(req, res) {
+  try {
+    if (!GOOGLE_PLACES_API_KEY) {
+      return res.status(501).json({
+        ok: false,
+        error: "GOOGLE_PLACES_API_KEY is not configured.",
+      });
+    }
+
+    const name = String(req.query.name || "").trim();
+    const address = String(req.query.address || "").trim();
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const maxWidthPx = clampNumber(req.query.maxWidthPx, 160, 800, 360);
+
+    if (!name) {
+      return res.status(400).json({
+        ok: false,
+        error: "name is required.",
+      });
+    }
+
+    const cacheKey = [
+      name,
+      address,
+      Number.isNaN(lat) ? "" : lat.toFixed(5),
+      Number.isNaN(lng) ? "" : lng.toFixed(5),
+      maxWidthPx,
+    ].join("|");
+
+    if (googlePhotoCache.has(cacheKey)) {
+      return res.json(googlePhotoCache.get(cacheKey));
+    }
+
+    const textQuery = [name, address].filter(Boolean).join(" ");
+    const searchBody = {
+      textQuery,
+      languageCode: "ko",
+      maxResultCount: 1,
+    };
+
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      searchBody.locationBias = {
+        circle: {
+          center: {
+            latitude: lat,
+            longitude: lng,
+          },
+          radius: 120,
+        },
+      };
+    }
+
+    const searchResponse = await fetch(
+      "https://places.googleapis.com/v1/places:searchText",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": GOOGLE_PLACES_API_KEY,
+          "X-Goog-FieldMask":
+            "places.id,places.displayName,places.photos,places.formattedAddress",
+        },
+        body: JSON.stringify(searchBody),
+      }
+    );
+    const searchText = await searchResponse.text();
+
+    if (!searchResponse.ok) {
+      return res.status(searchResponse.status).json({
+        ok: false,
+        error: searchText,
+      });
+    }
+
+    const searchData = JSON.parse(searchText);
+    const place = searchData.places?.[0];
+    const photo = place?.photos?.[0];
+
+    if (!photo?.name) {
+      const emptyResult = { ok: true, photoUri: null, attributions: [] };
+      googlePhotoCache.set(cacheKey, emptyResult);
+      return res.json(emptyResult);
+    }
+
+    const photoUrl = new URL(
+      `https://places.googleapis.com/v1/${photo.name}/media`
+    );
+    photoUrl.searchParams.set("maxWidthPx", String(maxWidthPx));
+    photoUrl.searchParams.set("skipHttpRedirect", "true");
+    photoUrl.searchParams.set("key", GOOGLE_PLACES_API_KEY);
+
+    const photoResponse = await fetch(photoUrl);
+    const photoText = await photoResponse.text();
+
+    if (!photoResponse.ok) {
+      return res.status(photoResponse.status).json({
+        ok: false,
+        error: photoText,
+      });
+    }
+
+    const photoData = JSON.parse(photoText);
+    const result = {
+      ok: true,
+      photoUri: photoData.photoUri || null,
+      attributions: photo.authorAttributions || [],
+      place: {
+        id: place.id,
+        name: place.displayName?.text || name,
+        address: place.formattedAddress || address,
+      },
+    };
+
+    googlePhotoCache.set(cacheKey, result);
+    return res.json(result);
+  } catch (error) {
+    console.error("Google place photo error:", error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
+function clampNumber(value, min, max, fallback) {
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function roundWeatherValue(value) {
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return null;
+  return Math.round(parsed * 10) / 10;
+}
+
+function weatherCodeLabel(code) {
+  if (code === 0) return "맑음";
+  if ([1, 2].includes(code)) return "구름 조금";
+  if (code === 3) return "흐림";
+  if ([45, 48].includes(code)) return "안개";
+  if ([51, 53, 55, 56, 57].includes(code)) return "이슬비";
+  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "비";
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "눈";
+  if ([95, 96, 99].includes(code)) return "뇌우";
+  return "날씨";
+}
+
+function weatherCodeIcon(code) {
+  if (code === 0) return "맑음";
+  if ([1, 2, 3].includes(code)) return "구름";
+  if ([45, 48].includes(code)) return "안개";
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
+    return "비";
+  }
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "눈";
+  if ([95, 96, 99].includes(code)) return "번개";
+  return "날씨";
+}
+
+async function readJsonFile(filePath, fallback) {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    return JSON.parse(content);
+  } catch (error) {
+    if (error.code === "ENOENT") return fallback;
+    throw error;
+  }
+}
+
+async function writeJsonFile(filePath, data) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
+}
+
+function normalizePlaceKeyPart(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function placeKeyFromPayload(payload = {}) {
+  const name = normalizePlaceKeyPart(payload.placeName || payload.name);
+  const address = normalizePlaceKeyPart(payload.address);
+
+  if (name || address) {
+    return `${name}|${address}`;
+  }
+
+  const lat = Number(payload.y ?? payload.lat);
+  const lng = Number(payload.x ?? payload.lng);
+  if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+    return `coord:${lat.toFixed(5)},${lng.toFixed(5)}`;
+  }
+
+  return "";
+}
+
+function accessibilityLabelFromStatus(status) {
+  if (status === "accessible") return "휠체어 진입 가능";
+  if (status === "not_accessible") return "휠체어 진입 어려움";
+  return "휠체어 진입 정보 확인 필요";
+}
+
+function normalizeAccessibilityStatus(status) {
+  const value = String(status || "").trim();
+  if (["accessible", "not_accessible", "unknown"].includes(value)) return value;
+  return "unknown";
+}
+
+function mapServiceUrl(endpoint) {
+  if (!endpoint) return null;
+  return new URL(endpoint, MAPSERVICE_BASE_URL).toString();
+}
+
+async function fetchMapServiceJson(endpoint, options = {}) {
+  const url = mapServiceUrl(endpoint);
+  if (!url) return null;
+
+  const response = await fetch(url, options);
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    throw new Error(data?.error || data?.message || text || "MapService 요청에 실패했습니다.");
+  }
+
+  return data;
+}
+
+async function handlePlaceAccessibility(req, res) {
+  try {
+    const key = placeKeyFromPayload(req.query);
+    if (!key) {
+      return res.status(400).json({ ok: false, error: "place name or coordinate is required." });
+    }
+
+    if (MAPSERVICE_PLACE_ACCESSIBILITY_ENDPOINT) {
+      const url = new URL(mapServiceUrl(MAPSERVICE_PLACE_ACCESSIBILITY_ENDPOINT));
+      url.searchParams.set("name", req.query.name || req.query.placeName || "");
+      url.searchParams.set("address", req.query.address || "");
+      url.searchParams.set("lat", req.query.lat || req.query.y || "");
+      url.searchParams.set("lng", req.query.lng || req.query.x || "");
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || "MapService 접근성 조회에 실패했습니다.");
+      }
+
+      const status = normalizeAccessibilityStatus(data.status || data.wheelchairAccess);
+      return res.json({
+        ok: true,
+        status,
+        label: data.label || accessibilityLabelFromStatus(status),
+        verified: Boolean(data.verified ?? data.record),
+        record: data.record || data,
+        source: "mapservice",
+      });
+    }
+
+    const places = await readJsonFile(PLACE_ACCESSIBILITY_FILE, {});
+    const record = places[key] || null;
+
+    return res.json({
+      ok: true,
+      status: record?.status || "unknown",
+      label: accessibilityLabelFromStatus(record?.status),
+      verified: Boolean(record),
+      record,
+      source: "local",
+    });
+  } catch (error) {
+    console.error("Accessibility lookup error:", error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+}
+
+async function handleCreateAccessibilityReport(req, res) {
+  try {
+    const placeName = String(req.body.placeName || req.body.name || "").trim();
+    const address = String(req.body.address || "").trim();
+    const key = placeKeyFromPayload(req.body);
+
+    if (!key) {
+      return res.status(400).json({ ok: false, error: "placeName 또는 위치 정보가 필요합니다." });
+    }
+
+    const report = {
+      id: randomUUID(),
+      placeKey: key,
+      placeName,
+      address,
+      x: req.body.x ?? req.body.lng ?? null,
+      y: req.body.y ?? req.body.lat ?? null,
+      type: String(req.body.type || "").trim(),
+      slope: req.body.slope || "",
+      wheelchairAccess: normalizeAccessibilityStatus(req.body.wheelchairAccess),
+      detail: String(req.body.detail || "").trim(),
+      imageData: typeof req.body.imageData === "string" ? req.body.imageData : "",
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      reviewedAt: null,
+    };
+
+    if (MAPSERVICE_ACCESSIBILITY_REPORTS_ENDPOINT) {
+      const data = await fetchMapServiceJson(MAPSERVICE_ACCESSIBILITY_REPORTS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(report),
+      });
+
+      return res.status(201).json({
+        ok: true,
+        report: data?.report || data || report,
+        source: "mapservice",
+      });
+    }
+
+    const reports = await readJsonFile(ACCESSIBILITY_REPORTS_FILE, []);
+
+    reports.unshift(report);
+    await writeJsonFile(ACCESSIBILITY_REPORTS_FILE, reports);
+
+    return res.status(201).json({ ok: true, report, source: "local" });
+  } catch (error) {
+    console.error("Accessibility report create error:", error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+}
+
+
 async function fetchDangerReportsFromMapService() {
   const url = `${MAPSERVICE_BASE_URL}${MAPSERVICE_REPORTS_ENDPOINT}`;
 
@@ -394,6 +913,9 @@ app.use(express.static(__dirname));
 
 app.get("/api/access-routes", handleAccessRoutes);
 app.get("/api/access-places", handleAccessPlaces);
+app.get("/api/place-photo", handlePlacePhoto);
+app.get("/api/place-accessibility", handlePlaceAccessibility);
+app.post("/api/accessibility-reports", handleCreateAccessibilityReport);
 
 app.use("/api", (req, res) => {
   res.status(404).json({
@@ -427,6 +949,16 @@ async function handleAccessRoutes(req, res) {
     );
 
     if (!startTarget || !destinationTarget) {
+      if (startPoint && destinationPoint) {
+        const orsRoute = await buildOrsAccessRoute(
+          startName,
+          destinationName,
+          startPoint,
+          destinationPoint
+        );
+        return res.json(orsRoute);
+      }
+
       return res.status(404).json({
         ok: false,
         error: "출발지 또는 목적지를 MapService POI 데이터에서 찾을 수 없습니다.",
@@ -436,14 +968,31 @@ async function handleAccessRoutes(req, res) {
         ],
       });
     }
-
     if (startTarget.id === destinationTarget.id) {
+      if (
+        startPoint &&
+        destinationPoint &&
+        getDistance(
+          startPoint.lat,
+          startPoint.lng,
+          destinationPoint.lat,
+          destinationPoint.lng
+        ) > 15
+      ) {
+        const orsRoute = await buildOrsAccessRoute(
+          startName,
+          destinationName,
+          startPoint,
+          destinationPoint
+        );
+        return res.json(orsRoute);
+      }
+
       return res.status(400).json({
         ok: false,
         error: "출발지와 목적지가 같습니다.",
       });
     }
-
     const shortest = findTargetPath(
       startTarget,
       destinationTarget,
@@ -536,6 +1085,9 @@ function placeSearchScore(item, query) {
 
   if (names.some((name) => name === query)) score += 100;
   if (names.some((name) => name.startsWith(query))) score += 50;
+  if (String(item.id).startsWith("virtual-building:") && names.some((name) => name === query)) {
+    score += 40;
+  }
   if (item.source === "mapservice" && !String(item.id).startsWith("virtual-building:")) {
     score += 20;
   }
@@ -546,7 +1098,14 @@ function placeSearchScore(item, query) {
 
 function placeMatchesQuery(item, query) {
   return searchNamesForPlace(item).some(
-    (name) => name.includes(query) || query.includes(name)
+    (name) =>
+      name.includes(query) || (!isGenericEntranceQuery(name) && query.includes(name))
+  );
+}
+
+function isGenericEntranceQuery(value) {
+  return ["정문", "쪽문", "후문", "입구", "출입구"].includes(
+    String(value || "")
   );
 }
 
@@ -569,7 +1128,7 @@ function searchNamesForPlace(item) {
 }
 
 async function loadMapServiceGraph() {
-  const [nodes] = await db.execute(
+  const [nodes] = await mapServiceDb.execute(
     `
     SELECT poi_id as id, poi_name as name,
       latitude as lat, longitude as lng, poi_type as type
@@ -578,7 +1137,7 @@ async function loadMapServiceGraph() {
     `
   );
 
-  const [buildingRows] = await db.execute(
+  const [buildingRows] = await mapServiceDb.execute(
     `
     SELECT p.poi_id as id, p.poi_name as name,
       p.latitude as lat, p.longitude as lng, p.poi_type as type,
@@ -590,7 +1149,7 @@ async function loadMapServiceGraph() {
     `
   );
 
-  const [edges] = await db.execute(
+  const [edges] = await mapServiceDb.execute(
     `
     SELECT start_poi_id as \`from\`, end_poi_id as \`to\`,
       distance as weight
@@ -637,6 +1196,19 @@ async function loadMapServiceGraph() {
 
         buildingMap[id].entrances.push(node.id);
       });
+
+    Object.values(buildingMap).forEach((building) => {
+      const entrances = building.entrances
+        .map((id) => nodeMap[id])
+        .filter(Boolean);
+
+      if (!entrances.length) return;
+
+      building.lat =
+        entrances.reduce((sum, node) => sum + node.lat, 0) / entrances.length;
+      building.lng =
+        entrances.reduce((sum, node) => sum + node.lng, 0) / entrances.length;
+    });
   }
 
   return {
@@ -671,15 +1243,32 @@ function findBuilding(buildings, rawName, point) {
   if (byName) return byName;
   if (!point) return null;
 
-  return buildings
+  const nearest = buildings
     .map((building) => ({
       building,
       distance: getDistance(point.lat, point.lng, building.lat, building.lng),
     }))
-    .sort((a, b) => a.distance - b.distance)[0]?.building || null;
+    .sort((a, b) => a.distance - b.distance)[0];
+
+  if (!nearest || nearest.distance > MAX_NEARBY_ROUTE_TARGET_DISTANCE) {
+    return null;
+  }
+
+  return nearest.building;
 }
 
 function findRouteTarget(graphData, rawName, point) {
+  if (!hasEntranceQualifier(rawName)) {
+    const building = findBuilding(graphData.buildings, rawName, point);
+    if (building) {
+      return {
+        ...building,
+        nodeIds: preferredBuildingEntrances(building, graphData),
+        type: "building",
+      };
+    }
+  }
+
   const exactPoi = findPoiNode(graphData.nodes, rawName);
   if (exactPoi) {
     return {
@@ -697,9 +1286,25 @@ function findRouteTarget(graphData, rawName, point) {
 
   return {
     ...building,
-    nodeIds: building.entrances,
+    nodeIds: preferredBuildingEntrances(building, graphData),
     type: "building",
   };
+}
+
+function preferredBuildingEntrances(building, graphData) {
+  const entrances = building.entrances || [];
+  const mainEntrances = entrances.filter((id) => {
+    const nodeName = graphData.nodeMap[id]?.name || "";
+    return /(^|_)정문($|_)/.test(nodeName);
+  });
+
+  return mainEntrances.length ? mainEntrances : entrances;
+}
+
+function hasEntranceQualifier(value) {
+  return /정문|쪽문|후문|입구|출입구|경사로|계단|엘리베이터|횡단보도/.test(
+    String(value || "")
+  );
 }
 
 function findPoiNode(nodes, rawName) {
@@ -709,20 +1314,30 @@ function findPoiNode(nodes, rawName) {
   const exact = nodes.find((node) => normalizePlaceName(node.name) === name);
   if (exact) return exact;
 
-  return nodes.find((node) => {
-    return searchNamesForPlace({
-      id: node.id,
-      place_name: node.name,
-      address_name: `MapService POI · ${node.type}`,
-      source: "mapservice",
-    }).some((nodeName) => name.includes(nodeName) || nodeName.includes(name));
-  });
+  return (
+    nodes
+      .map((node) => {
+        const item = {
+          id: node.id,
+          place_name: node.name,
+          address_name: `MapService POI · ${node.type}`,
+          source: "mapservice",
+        };
+
+        return {
+          node,
+          score: placeMatchesQuery(item, name) ? placeSearchScore(item, name) : 0,
+        };
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((a, b) => b.score - a.score)[0]?.node || null
+  );
 }
 
 function normalizePlaceName(value) {
   return String(value || "")
     .replace(/한양여자대학교|한양여대|서울특별시|성동구/g, "")
-    .replace(/\s|\(|\)|-/g, "")
+    .replace(/[\s_()\-]/g, "")
     .toLowerCase();
 }
 
