@@ -19,6 +19,7 @@ let dangerCircles = [];
 let startMarker = null;
 let endMarker = null;
 let currentLocationMarker = null;
+let currentLocationHeading = 0;
 let currentWatchId = null;
 let kioskMarkers = [];
 let nearbyInfoWindow = null;
@@ -30,6 +31,7 @@ let nearbyPanelKeyword = "주변";
 let currentRouteData = null;
 let selectedPlaceForRoute = null;
 let activeNearbyFilterKeyword = "";
+let currentInlineReportTarget = null;
 
 // false 일 땐 지도만 보는 중, true 일 땐 실제 길안내 중
 let navigationMode = false;
@@ -107,6 +109,11 @@ const filterPanel = document.getElementById("filterPanel");
 const closeFilterBtn = document.getElementById("closeFilterBtn");
 const favoritesPanel = document.getElementById("favoritesPanel");
 const closeFavoritesPanelBtn = document.getElementById("closeFavoritesPanelBtn");
+const favoriteEditBtn = document.getElementById("favoriteEditBtn");
+const favoriteGroupCount = document.getElementById("favoriteGroupCount");
+const favoriteSortLabel = document.getElementById("favoriteSortLabel");
+const favoriteGroupList = document.getElementById("favoriteGroupList");
+const addFavoriteGroupBtn = document.getElementById("addFavoriteGroupBtn");
 const socialHelpPanel = document.getElementById("socialHelpPanel");
 const closeSocialHelpBtn = document.getElementById("closeSocialHelpBtn");
 const requestSocialHelpBtn = document.getElementById("requestSocialHelpBtn");
@@ -133,6 +140,11 @@ let volunteerNearbyMarkers = [];
 let activeQuickRouteRole = "start";
 let quickRouteSearchTimer = null;
 let quickRouteSearchId = 0;
+let deviceHeadingListenerActive = false;
+let favoriteGroups = [];
+let favoritesEditMode = false;
+let currentFavoriteCandidate = null;
+let selectedFavoriteGroupId = null;
 
 loadSelectedRouteFromQuery();
 
@@ -500,12 +512,419 @@ function respondToVolunteerRequest(status) {
 
 function openFavoritesPage() {
   if (!favoritesPanel) return;
+
+  const token = localStorage.getItem("accessnavToken");
+  if (!token) {
+    location.href = "login.html";
+    return;
+  }
+
   keepCurrentMapView(() => {
     hideResultList();
     placeSheet.classList.add("hidden");
     filterPanel?.classList.add("hidden");
+    loadFavoriteGroups();
+    renderFavoriteGroups();
     favoritesPanel.classList.remove("hidden");
   });
+}
+
+function currentFavoriteStorageKey() {
+  const user = getStoredAuthUser();
+  return `accessnavFavoriteGroups:${user?.email || "local"}`;
+}
+
+function getStoredAuthUser() {
+  try {
+    return JSON.parse(localStorage.getItem("accessnavUser") || "null");
+  } catch {
+    return null;
+  }
+}
+
+function defaultFavoriteGroups() {
+  return [
+    {
+      id: "default",
+      name: "기본 그룹",
+      count: 6,
+      visibility: "private",
+      color: "green",
+      createdAt: 1,
+      places: [],
+    },
+    {
+      id: "namnam",
+      name: "남남",
+      count: 12,
+      visibility: "public",
+      color: "purple",
+      createdAt: 2,
+      places: [],
+    },
+    {
+      id: "cafe",
+      name: "경치 좋은 카페",
+      count: 5,
+      visibility: "private",
+      color: "yellow",
+      createdAt: 3,
+      places: [],
+    },
+  ];
+}
+
+function loadFavoriteGroups() {
+  const saved = localStorage.getItem(currentFavoriteStorageKey());
+  if (!saved) {
+    favoriteGroups = defaultFavoriteGroups();
+    saveFavoriteGroups();
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(saved);
+    favoriteGroups = Array.isArray(parsed) ? parsed : defaultFavoriteGroups();
+  } catch {
+    favoriteGroups = defaultFavoriteGroups();
+  }
+}
+
+function saveFavoriteGroups() {
+  localStorage.setItem(currentFavoriteStorageKey(), JSON.stringify(favoriteGroups));
+}
+
+function renderFavoriteGroups() {
+  if (!favoriteGroupList) return;
+  selectedFavoriteGroupId = null;
+
+  if (favoriteGroupCount) {
+    favoriteGroupCount.textContent = String(favoriteGroups.length);
+  }
+  if (favoriteSortLabel) {
+    favoriteSortLabel.textContent = "최신";
+  }
+  if (favoriteEditBtn) {
+    favoriteEditBtn.textContent = favoritesEditMode ? "완료" : "편집";
+    favoriteEditBtn.classList.toggle("active", favoritesEditMode);
+    favoriteEditBtn.disabled = Boolean(selectedFavoriteGroupId);
+  }
+
+  const groups = [...favoriteGroups].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  if (!groups.length) {
+    favoriteGroupList.innerHTML = `
+      <div class="favorite-empty-state">
+        <strong>아직 그룹이 없어요</strong>
+        <span>새 그룹을 추가해서 자주 가는 장소를 모아보세요.</span>
+      </div>
+    `;
+    return;
+  }
+
+  favoriteGroupList.innerHTML = groups
+    .map((group) => favoriteGroupMarkup(group))
+    .join("");
+}
+
+function favoriteGroupMarkup(group) {
+  const visibility = group.visibility === "public" ? "공개" : "나만 보기";
+  const color = ["green", "purple", "yellow"].includes(group.color) ? group.color : "green";
+  const groupCount = favoriteGroupPlaceCount(group);
+
+  if (favoritesEditMode) {
+    return `
+      <article class="favorite-group editing" data-group-id="${escapeHTML(group.id)}">
+        <span class="favorite-star ${color}" aria-hidden="true">★</span>
+        <div class="favorite-edit-fields">
+          <input class="favorite-name-input" type="text" value="${escapeHTML(group.name)}" aria-label="그룹 이름" />
+          <select class="favorite-visibility-select" aria-label="공개 범위">
+            <option value="private" ${group.visibility !== "public" ? "selected" : ""}>나만 보기</option>
+            <option value="public" ${group.visibility === "public" ? "selected" : ""}>공개</option>
+          </select>
+        </div>
+        <button class="favorite-delete-button" type="button" data-favorite-action="delete" aria-label="${escapeHTML(
+          group.name
+        )} 삭제">삭제</button>
+      </article>
+    `;
+  }
+
+  return `
+    <article class="favorite-group" data-group-id="${escapeHTML(group.id)}" data-favorite-action="open-group">
+      <span class="favorite-star ${color}" aria-hidden="true">★</span>
+      <div class="favorite-info">
+        <h2>${escapeHTML(group.name)}</h2>
+        <p>${groupCount} · ${visibility}</p>
+      </div>
+      <button class="group-menu-button" type="button" data-favorite-action="menu" aria-label="${escapeHTML(
+        group.name
+      )} 메뉴">⋮</button>
+    </article>
+  `;
+}
+
+function favoriteGroupPlaceCount(group) {
+  const savedPlaceCount = Array.isArray(group.places) ? group.places.length : 0;
+  return savedPlaceCount > 0 ? savedPlaceCount : Number(group.count) || 0;
+}
+
+function addFavoriteGroup() {
+  loadFavoriteGroups();
+  const nextNumber = favoriteGroups.length + 1;
+  favoriteGroups.unshift({
+    id: `group-${Date.now()}`,
+    name: `새 그룹 ${nextNumber}`,
+    count: 0,
+    visibility: "private",
+    color: favoriteColorForIndex(favoriteGroups.length),
+    createdAt: Date.now(),
+    places: [],
+  });
+  favoritesEditMode = true;
+  saveFavoriteGroups();
+  renderFavoriteGroups();
+  favoriteGroupList?.querySelector(".favorite-name-input")?.focus();
+}
+
+function favoriteColorForIndex(index) {
+  return ["green", "purple", "yellow"][index % 3];
+}
+
+function updateFavoriteGroupFromControl(control) {
+  const groupEl = control.closest(".favorite-group");
+  const group = favoriteGroups.find((item) => item.id === groupEl?.dataset.groupId);
+  if (!group) return;
+
+  if (control.classList.contains("favorite-name-input")) {
+    group.name = control.value.trim() || "이름 없는 그룹";
+  }
+  if (control.classList.contains("favorite-visibility-select")) {
+    group.visibility = control.value === "public" ? "public" : "private";
+  }
+  saveFavoriteGroups();
+  renderFavoriteGroups();
+}
+
+function deleteFavoriteGroup(button) {
+  const groupEl = button.closest(".favorite-group");
+  const groupId = groupEl?.dataset.groupId;
+  if (!groupId) return;
+
+  favoriteGroups = favoriteGroups.filter((group) => group.id !== groupId);
+  saveFavoriteGroups();
+  renderFavoriteGroups();
+}
+
+function renderFavoriteGroupDetail(groupId) {
+  const group = favoriteGroups.find((item) => item.id === groupId);
+  if (!favoriteGroupList || !group) return;
+
+  selectedFavoriteGroupId = groupId;
+  favoritesEditMode = false;
+
+  if (favoriteEditBtn) {
+    favoriteEditBtn.textContent = "편집";
+    favoriteEditBtn.classList.remove("active");
+    favoriteEditBtn.disabled = true;
+  }
+  if (favoriteGroupCount) {
+    favoriteGroupCount.textContent = String(favoriteGroupPlaceCount(group));
+  }
+  if (favoriteSortLabel) {
+    favoriteSortLabel.textContent = group.name;
+  }
+
+  const places = Array.isArray(group.places) ? group.places : [];
+  const placeItems = places.length
+    ? places
+        .map(
+          (place, index) => `
+            <article class="favorite-place-item" data-favorite-place-index="${index}">
+              <div>
+                <strong>${escapeHTML(place.name || "이름 없는 장소")}</strong>
+                <span>${escapeHTML(place.address || "주소 정보 없음")}</span>
+              </div>
+              <button type="button" data-favorite-place-remove="${index}" aria-label="${escapeHTML(
+                place.name || "장소"
+              )} 삭제">삭제</button>
+            </article>
+          `
+        )
+        .join("")
+    : `
+      <div class="favorite-empty-state">
+        <strong>저장한 장소가 없어요</strong>
+        <span>지도에서 장소를 선택하고 별을 눌러 이 그룹에 추가해보세요.</span>
+      </div>
+    `;
+
+  favoriteGroupList.innerHTML = `
+    <button class="favorite-detail-back" type="button" data-favorite-action="back-groups">← 그룹 목록</button>
+    <section class="favorite-group-detail">
+      <div class="favorite-group-detail-heading">
+        <span class="favorite-star ${escapeHTML(group.color || "green")}" aria-hidden="true">★</span>
+        <div>
+          <h2>${escapeHTML(group.name)}</h2>
+          <p>${places.length}개 장소 · ${group.visibility === "public" ? "공개" : "나만 보기"}</p>
+        </div>
+      </div>
+      <div class="favorite-place-list">
+        ${placeItems}
+      </div>
+    </section>
+  `;
+}
+
+function removeFavoritePlace(groupId, placeIndex) {
+  const group = favoriteGroups.find((item) => item.id === groupId);
+  if (!group || !Array.isArray(group.places)) return;
+
+  group.places.splice(placeIndex, 1);
+  group.count = group.places.length;
+  saveFavoriteGroups();
+  renderFavoriteGroupDetail(groupId);
+}
+
+function openFavoritePlaceOnMap(groupId, placeIndex) {
+  const group = favoriteGroups.find((item) => item.id === groupId);
+  const place = group?.places?.[placeIndex];
+  if (!place) return;
+
+  favoritesPanel?.classList.add("hidden");
+  const mapPlace = {
+    place_name: place.name,
+    road_address_name: place.address,
+    address_name: place.address,
+    category_group_name: place.category,
+    x: place.lng,
+    y: place.lat,
+  };
+  showNearbyPlaceDetail(mapPlace);
+}
+
+function normalizeFavoritePlace(place) {
+  const lat = Number(place?.y || place?.lat || 0);
+  const lng = Number(place?.x || place?.lng || 0);
+  const name = place?.place_name || place?.name || "이름 없는 장소";
+  const address = place?.road_address_name || place?.address_name || place?.address || "";
+
+  return {
+    id: place?.id || `${name}|${lat.toFixed(6)}|${lng.toFixed(6)}`,
+    name,
+    address,
+    category: placeCategory(place || {}),
+    lat,
+    lng,
+    savedAt: Date.now(),
+  };
+}
+
+function isPlaceSavedInFavorites(place) {
+  const target = normalizeFavoritePlace(place);
+  loadFavoriteGroups();
+  return favoriteGroups.some((group) =>
+    Array.isArray(group.places) && group.places.some((savedPlace) => savedPlace.id === target.id)
+  );
+}
+
+function openFavoriteGroupPicker(place) {
+  const token = localStorage.getItem("accessnavToken");
+  if (!token) {
+    location.href = "login.html";
+    return;
+  }
+
+  currentFavoriteCandidate = normalizeFavoritePlace(place);
+  loadFavoriteGroups();
+  renderFavoriteGroupPicker();
+}
+
+function renderFavoriteGroupPicker(message = "") {
+  if (!panelContent || !currentFavoriteCandidate) return;
+
+  const groups = [...favoriteGroups].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const groupButtons = groups.length
+    ? groups
+        .map((group) => {
+          const exists = Array.isArray(group.places)
+            ? group.places.some((place) => place.id === currentFavoriteCandidate.id)
+            : false;
+          return `
+            <button class="favorite-picker-group" type="button" data-favorite-group-id="${escapeHTML(group.id)}">
+              <span class="favorite-star ${escapeHTML(group.color || "green")}" aria-hidden="true">★</span>
+              <span>
+                <strong>${escapeHTML(group.name)}</strong>
+                <small>${favoriteGroupPlaceCount(group)} · ${group.visibility === "public" ? "공개" : "나만 보기"}${
+                  exists ? " · 저장됨" : ""
+                }</small>
+              </span>
+            </button>
+          `;
+        })
+        .join("")
+    : `<p class="favorite-picker-empty">먼저 그룹을 만들어주세요.</p>`;
+
+  panelContent.innerHTML = `
+    <button class="panel-back-button" id="favoritePickerBackBtn" type="button">← 장소</button>
+    <div class="favorite-picker-panel">
+      <div class="favorite-picker-heading">
+        <p class="sheet-label">즐겨찾기 저장</p>
+        <h3>${escapeHTML(currentFavoriteCandidate.name)}</h3>
+        <p class="muted">${escapeHTML(currentFavoriteCandidate.address || "주소 정보 없음")}</p>
+      </div>
+
+      <div class="favorite-picker-list">
+        ${groupButtons}
+      </div>
+
+      <form class="favorite-picker-form" id="favoritePickerForm">
+        <input id="favoritePickerNewGroup" type="text" placeholder="새 그룹 이름 입력" autocomplete="off" />
+        <button type="submit">새 그룹에 저장</button>
+      </form>
+
+      <p class="favorite-picker-message" id="favoritePickerMessage">${escapeHTML(message)}</p>
+    </div>
+  `;
+}
+
+function savePlaceToFavoriteGroup(groupId) {
+  if (!currentFavoriteCandidate) return;
+
+  const group = favoriteGroups.find((item) => item.id === groupId);
+  if (!group) return;
+
+  if (!Array.isArray(group.places)) {
+    group.places = [];
+  }
+
+  const alreadySaved = group.places.some((place) => place.id === currentFavoriteCandidate.id);
+  if (!alreadySaved) {
+    group.places.unshift(currentFavoriteCandidate);
+    group.count = Math.max(Number(group.count) || 0, group.places.length);
+    saveFavoriteGroups();
+  }
+
+  renderFavoriteGroupPicker(alreadySaved ? "이미 이 그룹에 저장된 장소예요." : "즐겨찾기에 저장했어요.");
+}
+
+function createFavoriteGroupWithPlace(name) {
+  const trimmedName = name.trim();
+  if (!trimmedName || !currentFavoriteCandidate) return;
+
+  const group = {
+    id: `group-${Date.now()}`,
+    name: trimmedName,
+    count: 1,
+    visibility: "private",
+    color: favoriteColorForIndex(favoriteGroups.length),
+    createdAt: Date.now(),
+    places: [currentFavoriteCandidate],
+  };
+
+  favoriteGroups.unshift(group);
+  saveFavoriteGroups();
+  renderFavoriteGroupPicker("새 그룹에 저장했어요.");
 }
 
 if (closeFavoritesPanelBtn && favoritesPanel) {
@@ -513,6 +932,82 @@ if (closeFavoritesPanelBtn && favoritesPanel) {
     favoritesPanel.classList.add("hidden");
   });
 }
+
+favoriteEditBtn?.addEventListener("click", () => {
+  favoritesEditMode = !favoritesEditMode;
+  loadFavoriteGroups();
+  renderFavoriteGroups();
+});
+
+addFavoriteGroupBtn?.addEventListener("click", addFavoriteGroup);
+
+favoriteGroupList?.addEventListener("change", (event) => {
+  const target = event.target;
+  if (
+    target instanceof HTMLInputElement &&
+    target.classList.contains("favorite-name-input")
+  ) {
+    updateFavoriteGroupFromControl(target);
+    return;
+  }
+
+  if (
+    target instanceof HTMLSelectElement &&
+    target.classList.contains("favorite-visibility-select")
+  ) {
+    updateFavoriteGroupFromControl(target);
+  }
+});
+
+favoriteGroupList?.addEventListener("click", (event) => {
+  const backGroupsButton = event.target.closest("[data-favorite-action='back-groups']");
+  if (backGroupsButton) {
+    renderFavoriteGroups();
+    return;
+  }
+
+  const removePlaceButton = event.target.closest("[data-favorite-place-remove]");
+  if (removePlaceButton && selectedFavoriteGroupId) {
+    event.stopPropagation();
+    removeFavoritePlace(selectedFavoriteGroupId, Number(removePlaceButton.dataset.favoritePlaceRemove));
+    return;
+  }
+
+  const favoritePlaceItem = event.target.closest("[data-favorite-place-index]");
+  if (favoritePlaceItem && selectedFavoriteGroupId) {
+    openFavoritePlaceOnMap(selectedFavoriteGroupId, Number(favoritePlaceItem.dataset.favoritePlaceIndex));
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-favorite-action='delete']");
+  if (deleteButton) {
+    deleteFavoriteGroup(deleteButton);
+    return;
+  }
+
+  const menuButton = event.target.closest("[data-favorite-action='menu']");
+  if (menuButton) {
+    favoritesEditMode = true;
+    renderFavoriteGroups();
+    return;
+  }
+
+  const groupButton = event.target.closest("[data-favorite-action='open-group']");
+  if (groupButton && !favoritesEditMode) {
+    renderFavoriteGroupDetail(groupButton.dataset.groupId);
+  }
+});
+
+favoriteGroupList?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  const target = event.target;
+  if (
+    target instanceof HTMLInputElement &&
+    target.classList.contains("favorite-name-input")
+  ) {
+    target.blur();
+  }
+});
 
 if (new URLSearchParams(location.search).get("panel") === "favorites") {
   openFavoritesPage();
@@ -572,6 +1067,26 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (event.target.closest("#favoritePickerBackBtn")) {
+    if (selectedPlaceForRoute) {
+      showNearbyPlaceDetail(selectedPlaceForRoute);
+    }
+    return;
+  }
+
+  if (event.target.closest("#favoritePlaceBtn")) {
+    if (selectedPlaceForRoute) {
+      openFavoriteGroupPicker(selectedPlaceForRoute);
+    }
+    return;
+  }
+
+  const favoriteGroupButton = event.target.closest("[data-favorite-group-id]");
+  if (favoriteGroupButton) {
+    savePlaceToFavoriteGroup(favoriteGroupButton.dataset.favoriteGroupId);
+    return;
+  }
+
   if (event.target.closest("#routePanelBackBtn")) {
     if (currentRouteData?.selectedRoute) {
       updateSelectedRouteSheet(currentRouteData.selectedRoute);
@@ -603,6 +1118,11 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (event.target.closest("#inlineReportBackBtn")) {
+    collapsePlaceSheet();
+    return;
+  }
+
   if (event.target.closest("#inlineSubmitReportBtn")) {
     submitInlineReport();
     return;
@@ -610,7 +1130,7 @@ document.addEventListener("click", (event) => {
 
   if (event.target.closest("#placeReportBtn")) {
     if (selectedPlaceForRoute) {
-      location.href = reportUrlForPlace(selectedPlaceForRoute);
+      openReportPanelAtCurrentMap(selectedPlaceForRoute);
     }
     return;
   }
@@ -667,9 +1187,20 @@ document.addEventListener("click", (event) => {
       return;
     }
 
-    startNavigationTracking();
+    if (navigationMode) {
+      stopNavigationTracking();
+    } else {
+      startNavigationTracking();
+    }
     openPlaceSheet();
   }
+});
+
+document.addEventListener("submit", (event) => {
+  if (event.target?.id !== "favoritePickerForm") return;
+  event.preventDefault();
+  const input = document.getElementById("favoritePickerNewGroup");
+  createFavoriteGroupWithPlace(input?.value || "");
 });
 
 function openReportPage() {
@@ -680,7 +1211,7 @@ function openReportPage() {
     return;
   }
 
-  location.href = reportUrlForPlace(targetPlace);
+  openReportPanelAtCurrentMap(targetPlace);
 }
 
 function reportUrlForPlace(place) {
@@ -734,39 +1265,58 @@ function openReportAtCurrentLocation() {
   );
 }
 
-function openReportPanelAtCurrentMap() {
+function openReportPageAtMapCenter() {
+  const center = map.getCenter();
+  location.href =
+    "report.html?name=" +
+    encodeURIComponent("지도 중심 위치") +
+    "&address=" +
+    encodeURIComponent("지도 중심 위치") +
+    `&x=${center.getLng()}&y=${center.getLat()}` +
+    "&v=20260830-accessibility";
+}
+
+function openReportPanelAtCurrentMap(targetPlace = null) {
   keepCurrentMapView(() => {
     const center = map.getCenter();
-    const lat = center.getLat();
-    const lng = center.getLng();
+    const lat = Number(targetPlace?.y || targetPlace?.lat || center.getLat());
+    const lng = Number(targetPlace?.x || targetPlace?.lng || center.getLng());
+    const locationLabel =
+      targetPlace?.road_address_name ||
+      targetPlace?.address_name ||
+      targetPlace?.address ||
+      targetPlace?.place_name ||
+      `지도 중심 위치 (${center.getLat().toFixed(6)}, ${center.getLng().toFixed(6)})`;
+
+    currentInlineReportTarget = {
+      lat,
+      lng,
+      label: locationLabel,
+      name: targetPlace?.place_name || targetPlace?.name || locationLabel,
+    };
 
     hideResultList();
     favoritesPanel?.classList.add("hidden");
     filterPanel?.classList.add("hidden");
-    placeSheet?.classList.add("route-sheet");
-    placeSheet?.classList.remove("route-list-sheet");
+    document.body.classList.remove("route-mode");
+    placeSheet?.classList.add("report-sheet");
+    placeSheet?.classList.remove("route-sheet", "route-list-sheet");
 
     panelContent.innerHTML = `
       <div class="report-panel-inline">
-        <div class="report-panel-heading">
-          <p class="sheet-label">위험 구간 제보</p>
+        <div class="inline-report-header">
+          <button class="inline-report-back" id="inlineReportBackBtn" type="button" aria-label="뒤로가기">←</button>
           <h3>위험 구간 제보</h3>
-          <p class="muted">현재 지도 위치 기준으로 제보합니다.</p>
         </div>
-
-        <label class="inline-field-label" for="inlineReportLocation">위치</label>
-        <input
-          id="inlineReportLocation"
-          class="inline-field"
-          type="text"
-          value="지도 중심 위치 (${lat.toFixed(6)}, ${lng.toFixed(6)})"
-        />
 
         <label class="inline-field-label">제보 유형</label>
         <div class="inline-chip-group" id="inlineReportTypes">
           <button class="inline-chip active" type="button" data-type="급경사">급경사</button>
-          <button class="inline-chip" type="button" data-type="계단">계단</button>
-          <button class="inline-chip" type="button" data-type="장애물">장애물</button>
+          <button class="inline-chip" type="button" data-type="파손 보도">파손 보도</button>
+          <button class="inline-chip" type="button" data-type="단차">단차</button>
+          <button class="inline-chip" type="button" data-type="미끄러운 노면">미끄러운 노면</button>
+          <button class="inline-chip" type="button" data-type="공사 통제">공사 통제</button>
+          <button class="inline-chip" type="button" data-type="기타">기타</button>
         </div>
 
         <label class="inline-field-label">휠체어 진입 정보</label>
@@ -774,6 +1324,20 @@ function openReportPanelAtCurrentMap() {
           <button class="inline-chip active" type="button" data-accessibility="unknown">확인 필요</button>
           <button class="inline-chip" type="button" data-accessibility="accessible">진입 가능</button>
           <button class="inline-chip" type="button" data-accessibility="not_accessible">진입 어려움</button>
+        </div>
+
+        <label class="inline-field-label" for="inlineReportLocation">위치</label>
+        <input
+          id="inlineReportLocation"
+          class="inline-field"
+          type="text"
+          value="${escapeHTML(locationLabel)}"
+        />
+
+        <div class="inline-slider-wrap">
+          <label class="inline-field-label" for="inlineSlopeRange">경사도 추정(선택)</label>
+          <input id="inlineSlopeRange" class="inline-slider" type="range" min="0" max="100" value="10" />
+          <div class="inline-slider-value" id="inlineSlopeValue">10%</div>
         </div>
 
         <label class="inline-field-label" for="inlineReportDetail">상세 설명</label>
@@ -797,11 +1361,17 @@ function openReportPanelAtCurrentMap() {
 
     const imageInput = document.getElementById("inlineReportImage");
     const uploadBox = document.getElementById("inlineReportUploadBox");
+    const slopeRange = document.getElementById("inlineSlopeRange");
+    const slopeValue = document.getElementById("inlineSlopeValue");
 
     imageInput?.addEventListener("change", () => {
       if (imageInput.files.length > 0) {
         uploadBox.childNodes[0].nodeValue = imageInput.files[0].name;
       }
+    });
+
+    slopeRange?.addEventListener("input", () => {
+      slopeValue.textContent = `${slopeRange.value}%`;
     });
 
     openPlaceSheet();
@@ -813,7 +1383,11 @@ async function submitInlineReport() {
   const imageInput = document.getElementById("inlineReportImage");
   const locationInput = document.getElementById("inlineReportLocation");
   const detailInput = document.getElementById("inlineReportDetail");
+  const slopeInput = document.getElementById("inlineSlopeRange");
   const center = map.getCenter();
+  const reportLat = currentInlineReportTarget?.lat || center.getLat();
+  const reportLng = currentInlineReportTarget?.lng || center.getLng();
+  const reportName = currentInlineReportTarget?.name || locationInput?.value || "지도 중심 위치";
   const selectedType =
     document.querySelector("#inlineReportTypes .inline-chip.active")?.dataset.type || "기타";
   const wheelchairAccess =
@@ -833,12 +1407,13 @@ async function submitInlineReport() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        placeName: locationInput?.value || "지도 중심 위치",
+        placeName: reportName,
         address: locationInput?.value || "지도 중심 위치",
-        x: center.getLng(),
-        y: center.getLat(),
+        x: reportLng,
+        y: reportLat,
         type: selectedType,
         wheelchairAccess,
+        slope: slopeInput?.value || "10",
         detail: detailInput?.value || "",
         imageData,
       }),
@@ -1233,8 +1808,8 @@ function searchNearbyPlacesFromPosition(keyword, currentPosition) {
 function drawNearbyPlaceMarkers(places) {
   const bounds = new kakao.maps.LatLngBounds();
 
-  if (currentLocationMarker) {
-    bounds.extend(currentLocationMarker.getPosition());
+  if (currentLocationPosition) {
+    bounds.extend(currentLocationPosition);
   }
 
   places.forEach((place) => {
@@ -1308,6 +1883,7 @@ function showQuickRouteResultsForInput(input) {
 
   const keyword = input.value.trim();
   clearTimeout(quickRouteSearchTimer);
+  hideResultList();
 
   if (!keyword) {
     hideQuickRouteResultList();
@@ -1394,14 +1970,22 @@ function showPlaceSelectionPanel(place) {
   selectedPlaceForRoute = place;
   infoPanelState = "place-select";
   if (!panelContent) return;
+  const savedInFavorites = isPlaceSavedInFavorites(place);
 
-  placeSheet?.classList.remove("route-list-sheet");
+  placeSheet?.classList.remove("report-sheet", "route-list-sheet");
   placeSheet?.classList.add("route-sheet");
 
   panelContent.innerHTML = `
     <div class="place-select-panel">
       <p class="sheet-label">&#51109;&#49548; &#49440;&#53469;</p>
-      <h3>${escapeHTML(place.place_name || "\uC774\uB984 \uC5C6\uC74C")}</h3>
+      <div class="nearby-detail-title-row">
+        <h3>${escapeHTML(place.place_name || "\uC774\uB984 \uC5C6\uC74C")}</h3>
+        <button class="place-favorite-button${savedInFavorites ? " saved" : ""}" id="favoritePlaceBtn" type="button" aria-label="즐겨찾기에 저장">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m12 3.4 2.62 5.31 5.86.85-4.24 4.13 1 5.83L12 16.76l-5.24 2.76 1-5.83-4.24-4.13 5.86-.85L12 3.4Z" />
+          </svg>
+        </button>
+      </div>
       <p class="muted">${escapeHTML(place.road_address_name || place.address_name || "\uC8FC\uC18C \uC815\uBCF4 \uC5C6\uC74C")}</p>
 
       <div class="route-endpoint-summary">
@@ -1614,6 +2198,7 @@ function renderRouteListPanel(data) {
   infoPanelState = "route-list";
   if (!panelContent) return;
   placeSheet?.classList.add("route-sheet", "route-list-sheet");
+  placeSheet?.classList.remove("report-sheet");
 
   const routes = data.routes || [];
   const summaryTitle = `${data.destination?.name || endPlace?.place_name || "목적지"}까지 경로 ${routes.length}개`;
@@ -1779,6 +2364,7 @@ function handleBackButton() {
 }
 
 function resetRouteState() {
+  stopNavigationTracking({ silent: true });
   clearSearchMarkers();
   clearNearbyFilterSelection();
   clearRoutePolylines();
@@ -1894,6 +2480,14 @@ function moveToCurrentLocation() {
 }
 
 function startNavigationTracking() {
+  const isLocalhost =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+  if (!window.isSecureContext && !isLocalhost) {
+    alert("실시간 위치 추적은 HTTPS 주소에서 사용할 수 있습니다.");
+    return;
+  }
+
   if (!navigator.geolocation) {
     alert("현재 위치 기능을 지원하지 않습니다.");
     return;
@@ -1905,6 +2499,9 @@ function startNavigationTracking() {
   }
 
   navigationMode = true;
+  document.body.classList.add("navigation-mode");
+  updateStartRouteButtonState();
+  startDeviceHeadingTracking();
 
   currentWatchId = navigator.geolocation.watchPosition(
     (position) => {
@@ -1912,22 +2509,41 @@ function startNavigationTracking() {
       const lng = position.coords.longitude;
 
       const currentPosition = new kakao.maps.LatLng(lat, lng);
+      const movedDistance = lastNavigationPosition
+        ? getDistance(
+            lastNavigationPosition.getLat(),
+            lastNavigationPosition.getLng(),
+            lat,
+            lng
+          )
+        : Infinity;
 
-      // 현재 위치 저장
+      if (movedDistance < 1) {
+        const stationaryHeading = normalizeHeading(position.coords.heading);
+        if (Number.isFinite(Number(position.coords.heading))) {
+          updateCurrentLocationMarker(lat, lng, stationaryHeading);
+        }
+        return;
+      }
+
+      const nextHeading = Number.isFinite(Number(position.coords.heading))
+        ? position.coords.heading
+        : bearingBetweenPositions(lastNavigationPosition, currentPosition);
+
       currentLocationPosition = currentPosition;
+      updateCurrentLocationMarker(lat, lng, nextHeading);
+      updateLiveNavigationProgress(currentPosition);
 
-      // 현재 위치 마커 이동
-      updateCurrentLocationMarker(lat, lng);
-
-      // 안내 중이라면 지도 중심도 현재 위치를 따라감
       if (navigationMode) {
-        map.setCenter(currentPosition);
+        if (typeof map.panTo === "function") {
+          map.panTo(currentPosition);
+        } else {
+          map.setCenter(currentPosition);
+        }
         map.setLevel(3);
       }
 
       lastNavigationPosition = currentPosition;
-
-      console.log("현재 위치:", lat, lng);
     },
 
     (error) => {
@@ -1935,6 +2551,7 @@ function startNavigationTracking() {
 
       if (error.code === 1) {
         alert("위치 권한이 거부되었습니다.");
+        stopNavigationTracking();
       } else if (error.code === 2) {
         alert("현재 위치를 확인할 수 없습니다.");
       } else if (error.code === 3) {
@@ -1952,8 +2569,10 @@ function startNavigationTracking() {
 
 
 // 길안내 중지
-function stopNavigationTracking() {
+function stopNavigationTracking({ silent = false } = {}) {
   navigationMode = false;
+  document.body.classList.remove("navigation-mode");
+  stopDeviceHeadingTracking();
 
   if (currentWatchId !== null) {
     navigator.geolocation.clearWatch(currentWatchId);
@@ -1961,8 +2580,118 @@ function stopNavigationTracking() {
   }
 
   lastNavigationPosition = null;
+  updateStartRouteButtonState();
 
-  console.log("길안내 종료");
+  if (!silent) {
+    console.log("길안내 종료");
+  }
+}
+
+async function startDeviceHeadingTracking() {
+  if (deviceHeadingListenerActive || typeof DeviceOrientationEvent === "undefined") return;
+
+  try {
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      const permission = await DeviceOrientationEvent.requestPermission();
+      if (permission !== "granted") return;
+    }
+
+    window.addEventListener("deviceorientationabsolute", handleDeviceHeading, true);
+    window.addEventListener("deviceorientation", handleDeviceHeading, true);
+    deviceHeadingListenerActive = true;
+  } catch (error) {
+    console.warn("기기 방향 센서를 사용할 수 없습니다:", error);
+  }
+}
+
+function stopDeviceHeadingTracking() {
+  if (!deviceHeadingListenerActive) return;
+
+  window.removeEventListener("deviceorientationabsolute", handleDeviceHeading, true);
+  window.removeEventListener("deviceorientation", handleDeviceHeading, true);
+  deviceHeadingListenerActive = false;
+}
+
+function handleDeviceHeading(event) {
+  if (!navigationMode || !currentLocationPosition) return;
+
+  const heading =
+    typeof event.webkitCompassHeading === "number"
+      ? event.webkitCompassHeading
+      : typeof event.alpha === "number"
+        ? 360 - event.alpha
+        : null;
+
+  if (heading === null) return;
+
+  currentLocationHeading = normalizeHeading(heading);
+  currentLocationMarker?.setContent(currentLocationMarkerContent(currentLocationHeading));
+}
+
+function updateStartRouteButtonState() {
+  const button = document.getElementById("startRouteBtn");
+  if (!button) return;
+
+  button.textContent = navigationMode ? "안내 종료" : "안내 시작";
+  button.classList.toggle("tracking", navigationMode);
+}
+
+function updateLiveNavigationProgress(currentPosition) {
+  const route = currentRouteData?.selectedRoute || currentRouteData?.routes?.[0];
+  const path = route?.path || [];
+  const destinationPoint = endPlace
+    ? { lat: Number(endPlace.y), lng: Number(endPlace.x) }
+    : path[path.length - 1];
+
+  const remainingDistance = estimateRemainingRouteDistance(currentPosition, path, destinationPoint);
+  if (!Number.isFinite(remainingDistance)) return;
+
+  updateRouteInfo({
+    distance: remainingDistance,
+    duration: Math.max(30, Math.round(remainingDistance / 1.1)),
+  });
+}
+
+function estimateRemainingRouteDistance(currentPosition, path, destinationPoint) {
+  if (!currentPosition) return Infinity;
+
+  if (!Array.isArray(path) || path.length < 2) {
+    if (!destinationPoint) return Infinity;
+    return getDistance(
+      currentPosition.getLat(),
+      currentPosition.getLng(),
+      Number(destinationPoint.lat),
+      Number(destinationPoint.lng)
+    );
+  }
+
+  let nearestIndex = 0;
+  let nearestDistance = Infinity;
+
+  path.forEach((point, index) => {
+    const distance = getDistance(
+      currentPosition.getLat(),
+      currentPosition.getLng(),
+      Number(point.lat),
+      Number(point.lng)
+    );
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  });
+
+  let remaining = nearestDistance;
+  for (let i = nearestIndex; i < path.length - 1; i += 1) {
+    remaining += getDistance(
+      Number(path[i].lat),
+      Number(path[i].lng),
+      Number(path[i + 1].lat),
+      Number(path[i + 1].lng)
+    );
+  }
+
+  return remaining;
 }
 
 function smoothMoveTo(targetPosition) {
@@ -1994,31 +2723,55 @@ function smoothMoveTo(targetPosition) {
   requestAnimationFrame(animate);
 }
 
-function updateCurrentLocationMarker(lat, lng) {
+function updateCurrentLocationMarker(lat, lng, heading = null) {
   const position = new kakao.maps.LatLng(lat, lng);
   currentLocationPosition = position;
-
-  const markerImage = new kakao.maps.MarkerImage(
-    "images/current-location.svg",
-    new kakao.maps.Size(90, 90),
-    {
-      offset: new kakao.maps.Point(45, 45),
-    }
-  );
+  currentLocationHeading = normalizeHeading(heading ?? currentLocationHeading);
 
   if (!currentLocationMarker) {
-    currentLocationMarker = new kakao.maps.Marker({
+    currentLocationMarker = new kakao.maps.CustomOverlay({
       map,
       position,
-      image: markerImage,
-      title: "현재 위치",
+      yAnchor: 0.5,
+      xAnchor: 0.5,
       zIndex: 20,
+      content: currentLocationMarkerContent(currentLocationHeading),
     });
   } else {
     currentLocationMarker.setPosition(position);
+    currentLocationMarker.setContent(currentLocationMarkerContent(currentLocationHeading));
   }
 
   updateWeatherBadge(lat, lng);
+}
+
+function currentLocationMarkerContent(heading) {
+  return `
+    <div class="current-location-overlay" style="--heading:${normalizeHeading(heading)}deg" aria-label="현재 위치">
+      <span class="current-location-direction" aria-hidden="true"></span>
+      <span class="current-location-dot" aria-hidden="true"></span>
+    </div>
+  `;
+}
+
+function normalizeHeading(value) {
+  const heading = Number(value);
+  if (!Number.isFinite(heading)) return currentLocationHeading || 0;
+  return ((heading % 360) + 360) % 360;
+}
+
+function bearingBetweenPositions(fromPosition, toPosition) {
+  if (!fromPosition || !toPosition) return currentLocationHeading;
+
+  const lat1 = (fromPosition.getLat() * Math.PI) / 180;
+  const lat2 = (toPosition.getLat() * Math.PI) / 180;
+  const dLng = ((toPosition.getLng() - fromPosition.getLng()) * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+
+  return normalizeHeading((Math.atan2(y, x) * 180) / Math.PI);
 }
 
 async function updateWeatherBadge(lat, lng) {
@@ -2099,7 +2852,7 @@ function renderRoutePanel(title, subtitle = "") {
   infoPanelState = "route";
   if (!panelContent) return;
   placeSheet?.classList.add("route-sheet");
-  placeSheet?.classList.remove("route-list-sheet");
+  placeSheet?.classList.remove("report-sheet", "route-list-sheet");
 
   const hasBothEndpoints = Boolean(startPlace && endPlace);
   const routeDetails = hasBothEndpoints
@@ -2151,6 +2904,7 @@ function renderRoutePanel(title, subtitle = "") {
 
     ${routeDetails}
   `;
+  updateStartRouteButtonState();
 }
 
 function renderNearbyPanel(places, keyword = "주변") {
@@ -2158,7 +2912,7 @@ function renderNearbyPanel(places, keyword = "주변") {
   nearbyPanelPlaces = places;
   nearbyPanelKeyword = keyword;
   if (!panelContent) return;
-  placeSheet?.classList.remove("route-sheet", "route-list-sheet");
+  placeSheet?.classList.remove("report-sheet", "route-sheet", "route-list-sheet");
 
   const cards = places
     .map((place, index) => {
@@ -2198,7 +2952,8 @@ function showNearbyPlaceDetail(place) {
   infoPanelState = "detail";
   selectedPlaceForRoute = place;
   if (!panelContent) return;
-  placeSheet?.classList.remove("route-sheet", "route-list-sheet");
+  placeSheet?.classList.remove("report-sheet", "route-sheet", "route-list-sheet");
+  const savedInFavorites = isPlaceSavedInFavorites(place);
 
   const position = new kakao.maps.LatLng(place.y, place.x);
   smoothMoveTo(position);
@@ -2212,7 +2967,14 @@ function showNearbyPlaceDetail(place) {
     ${nearbyPhotoMarkup(0, "detail")}
     <div class="nearby-detail">
       <p class="sheet-label">${escapeHTML(placeCategory(place))}</p>
-      <h3>${escapeHTML(place.place_name || "이름 없음")}</h3>
+      <div class="nearby-detail-title-row">
+        <h3>${escapeHTML(place.place_name || "이름 없음")}</h3>
+        <button class="place-favorite-button${savedInFavorites ? " saved" : ""}" id="favoritePlaceBtn" type="button" aria-label="즐겨찾기에 저장">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m12 3.4 2.62 5.31 5.86.85-4.24 4.13 1 5.83L12 16.76l-5.24 2.76 1-5.83-4.24-4.13 5.86-.85L12 3.4Z" />
+          </svg>
+        </button>
+      </div>
       <p class="muted">${escapeHTML(place.road_address_name || place.address_name || "주소 정보 없음")}</p>
       <div class="nearby-detail-meta">
         <span>${escapeHTML(formatPlaceDistance(place))}</span>

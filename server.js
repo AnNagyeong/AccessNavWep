@@ -356,6 +356,20 @@ async function buildOrsAccessRoute(startName, destinationName, startPoint, desti
     console.warn("MapService 위험 구간 조회 실패:", err.message);
   }
 
+  let routeFeatures = {
+    stairs: 0,
+    ramps: 0,
+    elevators: 0,
+    crosswalks: 0,
+  };
+
+  try {
+    const graphData = await loadMapServiceGraph();
+    routeFeatures = estimateRouteFeaturesFromGraph(routePath, graphData);
+  } catch (err) {
+    console.warn("MapService 경로 시설 개수 조회 실패:", err.message);
+  }
+
   const dangerPath = routePath.map((point) => ({
     ...point,
     type: hitZones.some(
@@ -385,14 +399,9 @@ async function buildOrsAccessRoute(startName, destinationName, startPoint, desti
         title: "도보 경로",
         distance: Math.round(Number(summary.distance || 0)),
         duration: Math.max(1, Math.ceil(Number(summary.duration || 0) / 60)),
-        dangerCount: hitZones.length,
+        dangerCount: routeFeatures.stairs + hitZones.length,
         dangerZones: hitZones,
-        features: {
-          stairs: 0,
-          ramps: 0,
-          elevators: 0,
-          crosswalks: 0,
-        },
+        features: routeFeatures,
         path: dangerPath,
       },
     ],
@@ -1490,6 +1499,76 @@ function formatAccessRoute(id, title, route, graphData) {
     },
     path,
   };
+}
+
+function estimateRouteFeaturesFromGraph(routePath, graphData, thresholdMeters = 25) {
+  const features = {
+    stairs: 0,
+    ramps: 0,
+    elevators: 0,
+    crosswalks: 0,
+  };
+
+  if (!Array.isArray(routePath) || routePath.length < 2 || !graphData?.nodes?.length) {
+    return features;
+  }
+
+  const typeToKey = {
+    stair: "stairs",
+    ramp: "ramps",
+    elevator: "elevators",
+    crosswalk: "crosswalks",
+  };
+  const countedNodeIds = new Set();
+
+  graphData.nodes.forEach((node) => {
+    const key = typeToKey[node.type];
+    if (!key || countedNodeIds.has(node.id)) return;
+
+    const distance = distanceFromPointToRoute(node, routePath);
+    if (distance <= thresholdMeters) {
+      countedNodeIds.add(node.id);
+      features[key] += 1;
+    }
+  });
+
+  return features;
+}
+
+function distanceFromPointToRoute(point, routePath) {
+  let minDistance = Infinity;
+
+  for (let i = 0; i < routePath.length - 1; i += 1) {
+    const distance = distanceFromPointToSegment(point, routePath[i], routePath[i + 1]);
+    if (distance < minDistance) {
+      minDistance = distance;
+    }
+  }
+
+  return minDistance;
+}
+
+function distanceFromPointToSegment(point, start, end) {
+  const latScale = 111320;
+  const lngScale = 111320 * Math.cos((point.lat * Math.PI) / 180);
+  const px = point.lng * lngScale;
+  const py = point.lat * latScale;
+  const ax = start.lng * lngScale;
+  const ay = start.lat * latScale;
+  const bx = end.lng * lngScale;
+  const by = end.lat * latScale;
+  const dx = bx - ax;
+  const dy = by - ay;
+
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(px - ax, py - ay);
+  }
+
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  const closestX = ax + t * dx;
+  const closestY = ay + t * dy;
+
+  return Math.hypot(px - closestX, py - closestY);
 }
 
 function summarizeBuilding(building) {
