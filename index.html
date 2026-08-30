@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AccessNav Web</title>
-  <link rel="stylesheet" href="style.css?v=20260830-weather-cloud" />
+  <link rel="stylesheet" href="style.css?v=20260830-search-list-top" />
 </head>
 <body>
   <div class="phone">
@@ -20,6 +20,20 @@
       />
       <button class="icon-btn" id="searchBtn">⌕</button>
     </div>
+
+    <section class="quick-route-panel" aria-label="출발지와 목적지 직접 입력">
+      <div class="quick-route-fields">
+        <input type="text" id="quickStartInput" placeholder="출발지 입력" autocomplete="off" />
+        <input type="text" id="quickEndInput" placeholder="도착지 입력" autocomplete="off" />
+        <button class="quick-swap-btn" id="quickSwapRouteBtn" type="button" aria-label="출발지와 도착지 바꾸기">⇅</button>
+      </div>
+      <div class="quick-route-actions">
+        <button class="quick-reset-btn" id="quickRouteResetBtn" type="button">↻ 다시입력</button>
+        <button class="quick-find-btn" id="quickRouteFindBtn" type="button">길찾기 ›</button>
+      </div>
+    </section>
+
+    <div id="quickRouteResultList" class="result-list quick-route-result-list hidden"></div>
 
     <!-- 카테고리 칩 -->
     <div class="chips">
@@ -45,10 +59,65 @@
     
     <!-- 필터링 UI, 즐겨찾기, 현재 위치 가져오는 기능 -->
     <div class="map-control-buttons">
+    <button id="socialHelpBtn" class="map-control-btn emergency-help-btn" type="button" aria-label="긴급 도움 요청">🚨</button>
     <button id="favoriteBtn" class="map-control-btn">⭐</button>
     <button id="filterBtn" class="map-control-btn">⚙️</button>
     <button id="currentLocationBtn" class="map-control-btn">📍</button>
     </div>
+
+    <section id="socialHelpPanel" class="social-help-panel hidden" aria-label="소셜 헬프 긴급 매칭">
+      <div class="social-help-card">
+        <button id="closeSocialHelpBtn" class="social-help-close" type="button" aria-label="닫기">×</button>
+        <span class="social-help-icon" aria-hidden="true">🚨</span>
+        <h2>긴급 도움 요청</h2>
+        <p>이동이 어려운 구간에서 주변 사용자와 봉사자에게 도움을 요청합니다.</p>
+        <div class="social-help-location" id="socialHelpLocation">현재 위치 확인 중</div>
+        <div class="social-help-status" id="socialHelpStatus">대기 중</div>
+        <button id="requestSocialHelpBtn" class="social-help-primary" type="button">주변에 도움 요청하기</button>
+      </div>
+    </section>
+
+    <section id="volunteerRequestPanel" class="volunteer-request-panel hidden" aria-label="봉사자 지원 요청 알림">
+      <div class="volunteer-request-card">
+        <div class="volunteer-request-header">
+          <div>
+            <p>지원 요청</p>
+            <h2>근처에 도움이 필요합니다</h2>
+          </div>
+          <span aria-hidden="true">🚨</span>
+        </div>
+
+        <div class="volunteer-request-map" id="volunteerRequestMap">
+          <span class="volunteer-map-fallback">지도 불러오는 중</span>
+        </div>
+
+        <div class="volunteer-request-info">
+          <div>
+            <span>신청자</span>
+            <strong id="volunteerRequesterName">심청자</strong>
+          </div>
+          <div>
+            <span>성별</span>
+            <strong id="volunteerRequesterGender">남성</strong>
+          </div>
+          <div>
+            <span>나이</span>
+            <strong id="volunteerRequesterAge">60대</strong>
+          </div>
+          <div>
+            <span>위치</span>
+            <strong id="volunteerRequesterLocation">요청 위치 확인 중</strong>
+          </div>
+        </div>
+
+        <p class="volunteer-request-radius">반경 500m 안의 로그인 사용자에게 전송됩니다.</p>
+
+        <div class="volunteer-request-actions">
+          <button id="acceptVolunteerRequestBtn" class="volunteer-accept-btn" type="button">수락</button>
+          <button id="declineVolunteerRequestBtn" class="volunteer-decline-btn" type="button">불가</button>
+        </div>
+      </div>
+    </section>
 
     <!-- 필터 패널 -->
     <div id="filterPanel" class="filter-panel hidden">
@@ -233,6 +302,6 @@
   </div>
 
   <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=80e48dd01aae3f043d16e5ad41071f5d&libraries=services"></script>
-  <script src="script.js?v=20260830-weather-cloud"></script>
+  <script src="script.js?v=20260830-search-list-top"></script>
 </body>
 </html>

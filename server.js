@@ -14,6 +14,14 @@ const MAX_NEARBY_ROUTE_TARGET_DISTANCE = 150;
 const DATA_DIR = path.join(__dirname, "data");
 const ACCESSIBILITY_REPORTS_FILE = path.join(DATA_DIR, "accessibility-reports.json");
 const PLACE_ACCESSIBILITY_FILE = path.join(DATA_DIR, "place-accessibility.json");
+const MAPSERVICE_PROJECT_DIR =
+  process.env.MAPSERVICE_PROJECT_DIR || "C:/MapService-main/MapService";
+const MAPSERVICE_ADMIN_DIR = path.join(MAPSERVICE_PROJECT_DIR, "Test", "graphManager2");
+const MAPSERVICE_IMAGES_DIR = path.join(MAPSERVICE_PROJECT_DIR, "Test", "images");
+const KAKAO_MAP_JS_KEY =
+  process.env.KAKAO_MAP_KEY ||
+  process.env.KAKAO_JAVASCRIPT_KEY ||
+  "80e48dd01aae3f043d16e5ad41071f5d";
 
 const ORS_API_KEY = process.env.ORS_API_KEY;
 const GOOGLE_PLACES_API_KEY =
@@ -59,6 +67,29 @@ app.get("/", (req, res) => {
 
 app.get("/index.html", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.use("/map-admin", express.static(MAPSERVICE_ADMIN_DIR));
+app.use("/images", express.static(MAPSERVICE_IMAGES_DIR));
+app.use("/panoramas", express.static(path.join(MAPSERVICE_PROJECT_DIR, "Test", "panoramas")));
+
+app.get("/admin", async (req, res) => {
+  try {
+    let html = await fs.readFile(
+      path.join(MAPSERVICE_ADMIN_DIR, "graphManager2.html"),
+      "utf-8"
+    );
+
+    html = html
+      .replace(/href="graphManager2\.css"/g, 'href="/map-admin/graphManager2.css"')
+      .replace(/src="graphManager2\.js"/g, 'src="/map-admin/graphManager2.js"')
+      .replace(/src="adminPanel\.js"/g, 'src="/map-admin/adminPanel.js"')
+      .replace(/__KAKAO_KEY__/g, KAKAO_MAP_JS_KEY);
+
+    res.type("html").send(html);
+  } catch (error) {
+    res.status(500).send(`Admin page load failed: ${error.message}`);
+  }
 });
 
 // ================= 테스트 API =================
@@ -759,6 +790,13 @@ async function handlePlaceAccessibility(req, res) {
       return res.status(400).json({ ok: false, error: "place name or coordinate is required." });
     }
 
+    if (!MAPSERVICE_PLACE_ACCESSIBILITY_ENDPOINT) {
+      return res.status(503).json({
+        ok: false,
+        error: "MapService place accessibility endpoint is not configured.",
+      });
+    }
+
     if (MAPSERVICE_PLACE_ACCESSIBILITY_ENDPOINT) {
       const url = new URL(mapServiceUrl(MAPSERVICE_PLACE_ACCESSIBILITY_ENDPOINT));
       url.searchParams.set("name", req.query.name || req.query.placeName || "");
@@ -827,6 +865,13 @@ async function handleCreateAccessibilityReport(req, res) {
       createdAt: new Date().toISOString(),
       reviewedAt: null,
     };
+
+    if (!MAPSERVICE_ACCESSIBILITY_REPORTS_ENDPOINT) {
+      return res.status(503).json({
+        ok: false,
+        error: "MapService accessibility reports endpoint is not configured.",
+      });
+    }
 
     if (MAPSERVICE_ACCESSIBILITY_REPORTS_ENDPOINT) {
       const data = await fetchMapServiceJson(MAPSERVICE_ACCESSIBILITY_REPORTS_ENDPOINT, {

@@ -7,6 +7,7 @@ const options = {
 
 const map = new kakao.maps.Map(container, options);
 const placesService = new kakao.maps.services.Places();
+const geocoder = new kakao.maps.services.Geocoder();
 const restoredMapViewFromQuery = restoreMapViewFromQuery();
 
 let markers = [];
@@ -21,12 +22,14 @@ let currentLocationMarker = null;
 let currentWatchId = null;
 let kioskMarkers = [];
 let nearbyInfoWindow = null;
+let clickedPlaceMarker = null;
 let currentLocationPosition = null;
 let infoPanelState = "route";
 let nearbyPanelPlaces = [];
 let nearbyPanelKeyword = "주변";
 let currentRouteData = null;
 let selectedPlaceForRoute = null;
+let activeNearbyFilterKeyword = "";
 
 // false 일 땐 지도만 보는 중, true 일 땐 실제 길안내 중
 let navigationMode = false;
@@ -78,6 +81,12 @@ const searchInput = document.getElementById("searchInput");
 const backBtn = document.getElementById("backBtn");
 const searchBtn = document.getElementById("searchBtn");
 const resultList = document.getElementById("resultList");
+const quickStartInput = document.getElementById("quickStartInput");
+const quickEndInput = document.getElementById("quickEndInput");
+const quickSwapRouteBtn = document.getElementById("quickSwapRouteBtn");
+const quickRouteResetBtn = document.getElementById("quickRouteResetBtn");
+const quickRouteFindBtn = document.getElementById("quickRouteFindBtn");
+const quickRouteResultList = document.getElementById("quickRouteResultList");
 
 const placeSheet = document.getElementById("placeSheet");
 const panelContent = document.getElementById("panelContent");
@@ -92,11 +101,22 @@ const chipButtons = document.querySelectorAll(".chip");
 
 const favoriteBtn = document.getElementById("favoriteBtn");
 const filterBtn = document.getElementById("filterBtn");
+const socialHelpBtn = document.getElementById("socialHelpBtn");
 const currentLocationBtn = document.getElementById("currentLocationBtn");
 const filterPanel = document.getElementById("filterPanel");
 const closeFilterBtn = document.getElementById("closeFilterBtn");
 const favoritesPanel = document.getElementById("favoritesPanel");
 const closeFavoritesPanelBtn = document.getElementById("closeFavoritesPanelBtn");
+const socialHelpPanel = document.getElementById("socialHelpPanel");
+const closeSocialHelpBtn = document.getElementById("closeSocialHelpBtn");
+const requestSocialHelpBtn = document.getElementById("requestSocialHelpBtn");
+const socialHelpLocation = document.getElementById("socialHelpLocation");
+const socialHelpStatus = document.getElementById("socialHelpStatus");
+const volunteerRequestPanel = document.getElementById("volunteerRequestPanel");
+const volunteerRequestMapEl = document.getElementById("volunteerRequestMap");
+const volunteerRequesterLocation = document.getElementById("volunteerRequesterLocation");
+const acceptVolunteerRequestBtn = document.getElementById("acceptVolunteerRequestBtn");
+const declineVolunteerRequestBtn = document.getElementById("declineVolunteerRequestBtn");
 
 const loginNavBtn = document.getElementById("loginNavBtn");
 const cameraNavBtn = document.getElementById("cameraNavBtn");
@@ -107,8 +127,16 @@ const weatherTemp = document.getElementById("weatherTemp");
 const weatherSummary = document.getElementById("weatherSummary");
 
 let lastWeatherKey = "";
+let volunteerPreviewMap = null;
+let volunteerPreviewMarker = null;
+let volunteerNearbyMarkers = [];
+let activeQuickRouteRole = "start";
+let quickRouteSearchTimer = null;
+let quickRouteSearchId = 0;
 
 loadSelectedRouteFromQuery();
+
+kakao.maps.event.addListener(map, "click", handleMapPlaceClick);
 
 if (backBtn) {
   backBtn.addEventListener("click", handleBackButton);
@@ -116,7 +144,8 @@ if (backBtn) {
 
 if (loginNavBtn) {
   loginNavBtn.addEventListener("click", () => {
-    location.href = "mypage.html";
+    const token = localStorage.getItem("accessnavToken");
+    location.href = token ? "mypage.html" : "login.html";
   });
 }
 
@@ -138,6 +167,7 @@ if (sheetHandle && placeSheet) {
 searchBtn.addEventListener("click", () => {
   const keyword = searchInput.value.trim();
   if (!keyword) return;
+  clearNearbyFilterSelection();
   searchPlaces(keyword);
 });
 
@@ -145,6 +175,7 @@ searchInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     const keyword = searchInput.value.trim();
     if (!keyword) return;
+    clearNearbyFilterSelection();
     searchPlaces(keyword);
   }
 });
@@ -152,17 +183,319 @@ searchInput.addEventListener("keydown", (e) => {
 chipButtons.forEach((chip) => {
   chip.addEventListener("click", () => {
     const keyword = chip.dataset.keyword;
+
+    if (activeNearbyFilterKeyword === keyword) {
+      clearActiveNearbyFilter();
+      return;
+    }
+
+    setActiveNearbyFilter(keyword);
     searchInput.value = keyword;
     searchNearbyPlaces(keyword);
   });
+});
+
+if (quickRouteFindBtn) {
+  quickRouteFindBtn.addEventListener("click", findQuickRoute);
+}
+
+if (quickRouteResetBtn) {
+  quickRouteResetBtn.addEventListener("click", resetRouteState);
+}
+
+if (quickSwapRouteBtn) {
+  quickSwapRouteBtn.addEventListener("click", swapQuickRouteInputs);
+}
+
+[quickStartInput, quickEndInput].forEach((input) => {
+  input?.addEventListener("focus", () => {
+    activeQuickRouteRole = input === quickStartInput ? "start" : "end";
+    showQuickRouteResultsForInput(input);
+  });
+
+  input?.addEventListener("input", () => {
+    activeQuickRouteRole = input === quickStartInput ? "start" : "end";
+    showQuickRouteResultsForInput(input);
+  });
+
+  input?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      findQuickRoute();
+    }
+  });
+});
+
+document.addEventListener("click", (event) => {
+  if (
+    event.target.closest(".quick-route-panel") ||
+    event.target.closest("#quickRouteResultList")
+  ) {
+    return;
+  }
+
+  hideQuickRouteResultList();
 });
 
 if (currentLocationBtn) {
   currentLocationBtn.addEventListener("click", moveToCurrentLocation);
 }
 
+if (socialHelpBtn) {
+  socialHelpBtn.addEventListener("click", openSocialHelpPanel);
+}
+
+if (closeSocialHelpBtn) {
+  closeSocialHelpBtn.addEventListener("click", closeSocialHelpPanel);
+}
+
+if (socialHelpPanel) {
+  socialHelpPanel.addEventListener("click", (event) => {
+    if (event.target === socialHelpPanel) {
+      closeSocialHelpPanel();
+    }
+  });
+}
+
+if (requestSocialHelpBtn) {
+  requestSocialHelpBtn.addEventListener("click", requestSocialHelp);
+}
+
+if (volunteerRequestPanel) {
+  volunteerRequestPanel.addEventListener("click", (event) => {
+    if (event.target === volunteerRequestPanel) {
+      volunteerRequestPanel.classList.add("hidden");
+    }
+  });
+}
+
+if (acceptVolunteerRequestBtn) {
+  acceptVolunteerRequestBtn.addEventListener("click", () => respondToVolunteerRequest("accepted"));
+}
+
+if (declineVolunteerRequestBtn) {
+  declineVolunteerRequestBtn.addEventListener("click", () => respondToVolunteerRequest("declined"));
+}
+
 if (favoriteBtn) {
   favoriteBtn.addEventListener("click", openFavoritesPage);
+}
+
+function openSocialHelpPanel() {
+  if (!socialHelpPanel) return;
+
+  favoritesPanel?.classList.add("hidden");
+  filterPanel?.classList.add("hidden");
+  placeSheet?.classList.add("hidden");
+
+  updateSocialHelpLocationText();
+  if (socialHelpStatus) {
+    socialHelpStatus.textContent = "대기 중";
+    socialHelpStatus.classList.remove("matching");
+  }
+  if (requestSocialHelpBtn) {
+    requestSocialHelpBtn.disabled = false;
+    requestSocialHelpBtn.textContent = "주변에 도움 요청하기";
+  }
+
+  socialHelpPanel.classList.remove("hidden");
+}
+
+function closeSocialHelpPanel() {
+  if (!socialHelpPanel) return;
+  socialHelpPanel.classList.add("hidden");
+}
+
+function updateSocialHelpLocationText() {
+  if (!socialHelpLocation) return;
+
+  const position = currentLocationPosition || map.getCenter();
+  if (!position) {
+    socialHelpLocation.textContent = "현재 위치 확인 중";
+    return;
+  }
+
+  socialHelpLocation.textContent = "위치 확인 중";
+  getSocialHelpLocationLabel().then((label) => {
+    socialHelpLocation.textContent = label;
+  });
+}
+
+function requestSocialHelp() {
+  updateSocialHelpLocationText();
+
+  if (socialHelpStatus) {
+    socialHelpStatus.textContent = "주변 봉사자에게 요청을 보내는 중";
+    socialHelpStatus.classList.add("matching");
+  }
+
+  if (requestSocialHelpBtn) {
+    requestSocialHelpBtn.disabled = true;
+    requestSocialHelpBtn.textContent = "매칭 요청 완료";
+  }
+
+  setTimeout(() => {
+    if (socialHelpStatus) {
+      socialHelpStatus.textContent = "요청이 접수되었습니다. 가까운 봉사자 응답을 기다리는 중";
+    }
+    showVolunteerRequestPreview();
+  }, 900);
+}
+
+function showVolunteerRequestPreview() {
+  if (!volunteerRequestPanel) return;
+
+  if (volunteerRequesterLocation) {
+    volunteerRequesterLocation.textContent = "위치 확인 중";
+    getSocialHelpLocationLabel().then((locationText) => {
+      volunteerRequesterLocation.textContent = locationText;
+    });
+  }
+
+  volunteerRequestPanel.classList.remove("hidden");
+  renderVolunteerRequestMap();
+}
+
+async function getSocialHelpLocationLabel() {
+  const namedPlace = getSocialHelpNamedPlace();
+  if (namedPlace) return namedPlace;
+
+  const addressLabel = await getAddressLabelFromMapCenter();
+  return addressLabel || "현재 지도 위치";
+}
+
+function getSocialHelpNamedPlace() {
+  if (selectedPlaceForRoute?.place_name) return selectedPlaceForRoute.place_name;
+  if (endPlace?.place_name && endPlace.place_name !== "현재 위치") return endPlace.place_name;
+  if (startPlace?.place_name && startPlace.place_name !== "현재 위치") return startPlace.place_name;
+
+  const center = currentLocationPosition || map.getCenter();
+  if (!center || !nearbyPanelPlaces.length) return "";
+
+  let nearestPlace = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  nearbyPanelPlaces.forEach((place) => {
+    const lat = Number(place.y);
+    const lng = Number(place.x);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+    const distance = getDistance(
+      center.getLat(),
+      center.getLng(),
+      lat,
+      lng
+    );
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestPlace = place;
+    }
+  });
+
+  return nearestDistance <= 10 ? nearestPlace?.place_name || "" : "";
+}
+
+function getAddressLabelFromMapCenter() {
+  const position = currentLocationPosition || map.getCenter();
+  if (!position || !geocoder) return Promise.resolve("");
+
+  return new Promise((resolve) => {
+    geocoder.coord2Address(position.getLng(), position.getLat(), (result, status) => {
+      if (status !== kakao.maps.services.Status.OK || !result?.length) {
+        resolve("");
+        return;
+      }
+
+      const roadAddress = result[0].road_address;
+      const address = result[0].address;
+      resolve(
+        roadAddress?.building_name ||
+          roadAddress?.address_name ||
+          address?.address_name ||
+          ""
+      );
+    });
+  });
+}
+
+function renderVolunteerRequestMap() {
+  if (!volunteerRequestMapEl) return;
+
+  const position = currentLocationPosition || map.getCenter();
+  if (!position) return;
+
+  setTimeout(() => {
+    if (!volunteerPreviewMap) {
+      volunteerPreviewMap = new kakao.maps.Map(volunteerRequestMapEl, {
+        center: position,
+        level: 4,
+      });
+      volunteerPreviewMap.setDraggable(false);
+      volunteerPreviewMap.setZoomable(false);
+    }
+
+    volunteerRequestMapEl.classList.add("map-ready");
+    volunteerPreviewMap.setCenter(position);
+    volunteerPreviewMap.setLevel(4);
+    volunteerPreviewMap.relayout();
+
+    if (!volunteerPreviewMarker) {
+      volunteerPreviewMarker = new kakao.maps.Marker({
+        map: volunteerPreviewMap,
+        position,
+      });
+    } else {
+      volunteerPreviewMarker.setPosition(position);
+      volunteerPreviewMarker.setMap(volunteerPreviewMap);
+    }
+
+    renderVolunteerNearbyBuildingMarkers(position);
+  }, 0);
+}
+
+function renderVolunteerNearbyBuildingMarkers(position) {
+  if (!volunteerPreviewMap || !position) return;
+
+  volunteerNearbyMarkers.forEach((marker) => marker.setMap(null));
+  volunteerNearbyMarkers = [];
+
+  nearbyPanelPlaces
+    .map((place) => {
+      const lat = Number(place.y);
+      const lng = Number(place.x);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+
+      return {
+        place,
+        lat,
+        lng,
+        distance: getDistance(position.getLat(), position.getLng(), lat, lng),
+      };
+    })
+    .filter(Boolean)
+    .filter((item) => item.distance <= 10)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 3)
+    .forEach((item) => {
+      const marker = new kakao.maps.Marker({
+        map: volunteerPreviewMap,
+        position: new kakao.maps.LatLng(item.lat, item.lng),
+        title: item.place.place_name || "근처 건물",
+      });
+      volunteerNearbyMarkers.push(marker);
+    });
+}
+
+function respondToVolunteerRequest(status) {
+  if (!volunteerRequestPanel) return;
+
+  if (status === "accepted") {
+    alert("지원 요청을 수락했습니다. 신청자에게 이동 중 알림이 전송됩니다.");
+  } else {
+    alert("지원 요청을 거절했습니다. 다른 주변 사용자에게 요청이 유지됩니다.");
+  }
+
+  volunteerRequestPanel.classList.add("hidden");
 }
 
 function openFavoritesPage() {
@@ -300,6 +633,7 @@ document.addEventListener("click", (event) => {
 
   if (event.target.closest("#clearStartPlaceBtn")) {
     startPlace = null;
+    syncQuickRouteInputs();
     if (startMarker) {
       startMarker.setMap(null);
       startMarker = null;
@@ -314,6 +648,7 @@ document.addEventListener("click", (event) => {
 
   if (event.target.closest("#clearEndPlaceBtn")) {
     endPlace = null;
+    syncQuickRouteInputs();
     if (endMarker) {
       endMarker.setMap(null);
       endMarker = null;
@@ -542,6 +877,7 @@ function keepCurrentMapView(callback) {
 }
 
 function searchPlaces(keyword) {
+  hideQuickRouteResultList();
   Promise.all([
     fetchMapServicePlaces(keyword),
     new Promise((resolve) => {
@@ -560,6 +896,127 @@ function searchPlaces(keyword) {
 
     renderResultList(places);
   });
+}
+
+function searchKakaoPlaces(keyword, options) {
+  return new Promise((resolve) => {
+    placesService.keywordSearch(keyword, (data, status) => {
+      resolve(status === kakao.maps.services.Status.OK ? data : []);
+    }, options);
+  });
+}
+
+async function handleMapPlaceClick(event) {
+  const position = event.latLng;
+  if (!position) return;
+
+  try {
+    const place = await resolveClickedMapPlace(position);
+    showMapClickedPlace(place, position);
+  } catch (error) {
+    console.warn("지도 클릭 장소 조회 실패:", error);
+  }
+}
+
+async function resolveClickedMapPlace(position) {
+  const addressInfo = await getAddressInfo(position);
+  const keywords = [
+    addressInfo.buildingName,
+    addressInfo.roadAddress,
+    addressInfo.address,
+  ]
+    .filter(Boolean)
+    .filter((value, index, array) => array.indexOf(value) === index);
+
+  for (const keyword of keywords) {
+    const places = await searchKakaoPlaces(keyword, {
+      location: position,
+      radius: 80,
+      sort: kakao.maps.services.SortBy.DISTANCE,
+    });
+    const nearestPlace = nearestPlaceFromPosition(places, position, 90);
+    if (nearestPlace) return nearestPlace;
+  }
+
+  const fallbackName =
+    addressInfo.buildingName || addressInfo.roadAddress || addressInfo.address || "선택한 위치";
+
+  return {
+    place_name: fallbackName,
+    road_address_name: addressInfo.roadAddress || "",
+    address_name: addressInfo.address || fallbackName,
+    category_name: "지도 선택",
+    y: position.getLat(),
+    x: position.getLng(),
+    distance: currentLocationPosition
+      ? Math.round(
+          getDistance(
+            currentLocationPosition.getLat(),
+            currentLocationPosition.getLng(),
+            position.getLat(),
+            position.getLng()
+          )
+        )
+      : "",
+  };
+}
+
+function getAddressInfo(position) {
+  if (!geocoder) {
+    return Promise.resolve({ buildingName: "", roadAddress: "", address: "" });
+  }
+
+  return new Promise((resolve) => {
+    geocoder.coord2Address(position.getLng(), position.getLat(), (result, status) => {
+      if (status !== kakao.maps.services.Status.OK || !result?.length) {
+        resolve({ buildingName: "", roadAddress: "", address: "" });
+        return;
+      }
+
+      const roadAddress = result[0].road_address;
+      const address = result[0].address;
+      resolve({
+        buildingName: roadAddress?.building_name || "",
+        roadAddress: roadAddress?.address_name || "",
+        address: address?.address_name || "",
+      });
+    });
+  });
+}
+
+function nearestPlaceFromPosition(places, position, maxDistanceMeters) {
+  return places
+    .map((place) => {
+      const lat = Number(place.y);
+      const lng = Number(place.x);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+
+      return {
+        place,
+        distance: getDistance(position.getLat(), position.getLng(), lat, lng),
+      };
+    })
+    .filter(Boolean)
+    .filter((item) => item.distance <= maxDistanceMeters)
+    .sort((a, b) => a.distance - b.distance)[0]?.place || null;
+}
+
+function showMapClickedPlace(place, position) {
+  clearNearbyFilterSelection();
+  clearSearchMarkers();
+  hideResultList();
+  nearbyPanelPlaces = [place];
+  nearbyPanelKeyword = "선택한 장소";
+
+  clickedPlaceMarker = new kakao.maps.Marker({
+    map,
+    position: new kakao.maps.LatLng(place.y || position.getLat(), place.x || position.getLng()),
+    title: place.place_name || "선택한 장소",
+  });
+  place._marker = clickedPlaceMarker;
+  markers.push(clickedPlaceMarker);
+
+  showNearbyPlaceDetail(place);
 }
 
 async function fetchMapServicePlaces(keyword) {
@@ -604,6 +1061,139 @@ function searchNearbyPlaces(keyword) {
       maximumAge: 0,
     }
   );
+}
+
+function setActiveNearbyFilter(keyword) {
+  activeNearbyFilterKeyword = keyword;
+  chipButtons.forEach((chip) => {
+    const isActive = chip.dataset.keyword === keyword;
+    chip.classList.toggle("active", isActive);
+    chip.setAttribute("aria-pressed", String(isActive));
+  });
+}
+
+function clearNearbyFilterSelection() {
+  activeNearbyFilterKeyword = "";
+  chipButtons.forEach((chip) => {
+    chip.classList.remove("active");
+    chip.setAttribute("aria-pressed", "false");
+  });
+}
+
+function clearActiveNearbyFilter() {
+  clearNearbyFilterSelection();
+  clearSearchMarkers();
+  hideResultList();
+  nearbyPanelPlaces = [];
+  nearbyPanelKeyword = "주변";
+  selectedPlaceForRoute = null;
+
+  if (infoPanelState === "nearby" || infoPanelState === "detail") {
+    infoPanelState = "route";
+    placeSheet?.classList.add("hidden");
+  }
+}
+
+async function resolveRouteInputPlace(keyword, label) {
+  const query = String(keyword || "").trim();
+  if (!query) {
+    throw new Error(`${label}를 입력해주세요.`);
+  }
+
+  const [mapServicePlaces, kakaoPlaces] = await Promise.all([
+    fetchMapServicePlaces(query),
+    searchKakaoPlaces(query),
+  ]);
+  const place = [...mapServicePlaces, ...kakaoPlaces].find((item) => item?.x && item?.y);
+
+  if (!place) {
+    throw new Error(`${label} 검색 결과가 없습니다.`);
+  }
+
+  return place;
+}
+
+async function findQuickRoute() {
+  if (!quickStartInput || !quickEndInput || !quickRouteFindBtn) return;
+
+  const startKeyword = quickStartInput.value.trim();
+  const endKeyword = quickEndInput.value.trim();
+
+  quickRouteFindBtn.disabled = true;
+  quickRouteFindBtn.textContent = "검색 중";
+
+  try {
+    const [resolvedStartPlace, resolvedEndPlace] = await Promise.all([
+      resolveRouteInputPlace(startKeyword, "출발지"),
+      resolveRouteInputPlace(endKeyword, "도착지"),
+    ]);
+
+    if (
+      getDistance(
+        Number(resolvedStartPlace.y),
+        Number(resolvedStartPlace.x),
+        Number(resolvedEndPlace.y),
+        Number(resolvedEndPlace.x)
+      ) < 3
+    ) {
+      throw new Error("출발지와 도착지가 같습니다.");
+    }
+
+    clearNearbyFilterSelection();
+    clearSearchMarkers();
+    hideResultList();
+    hideQuickRouteResultList();
+    clearRoutePolylines();
+    clearDangerZones();
+
+    startPlace = resolvedStartPlace;
+    endPlace = resolvedEndPlace;
+    selectedPlaceForRoute = null;
+    currentRouteData = null;
+    quickStartInput.value = startPlace.place_name || startKeyword;
+    quickEndInput.value = endPlace.place_name || endKeyword;
+
+    updateStartMarker(startPlace);
+    updateEndMarker(endPlace);
+    document.body.classList.add("route-mode");
+    openPlaceSheet();
+    updatePlaceSheet();
+    await drawDefaultRouteFromSelection();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    quickRouteFindBtn.disabled = false;
+    quickRouteFindBtn.textContent = "길찾기 ›";
+  }
+}
+
+function swapQuickRouteInputs() {
+  if (!quickStartInput || !quickEndInput) return;
+
+  const nextStartValue = quickEndInput.value;
+  quickEndInput.value = quickStartInput.value;
+  quickStartInput.value = nextStartValue;
+
+  if (startPlace || endPlace) {
+    const nextStartPlace = endPlace;
+    endPlace = startPlace;
+    startPlace = nextStartPlace;
+    currentRouteData = null;
+    clearRoutePolylines();
+    clearDangerZones();
+
+    if (startMarker) {
+      startMarker.setMap(null);
+      startMarker = null;
+    }
+    if (endMarker) {
+      endMarker.setMap(null);
+      endMarker = null;
+    }
+    if (startPlace) updateStartMarker(startPlace);
+    if (endPlace) updateEndMarker(endPlace);
+    updatePlaceSheet();
+  }
 }
 
 function searchNearbyPlacesFromPosition(keyword, currentPosition) {
@@ -709,6 +1299,97 @@ function hideResultList() {
   resultList.classList.add("hidden");
 }
 
+function hideQuickRouteResultList() {
+  quickRouteResultList?.classList.add("hidden");
+}
+
+function showQuickRouteResultsForInput(input) {
+  if (!quickRouteResultList) return;
+
+  const keyword = input.value.trim();
+  clearTimeout(quickRouteSearchTimer);
+
+  if (!keyword) {
+    hideQuickRouteResultList();
+    return;
+  }
+
+  const searchId = quickRouteSearchId + 1;
+  quickRouteSearchId = searchId;
+
+  quickRouteSearchTimer = setTimeout(async () => {
+    const places = await searchRouteCandidatePlaces(keyword);
+    if (searchId !== quickRouteSearchId) return;
+    renderQuickRouteResultList(places);
+  }, 220);
+}
+
+async function searchRouteCandidatePlaces(keyword) {
+  const [mapServicePlaces, kakaoPlaces] = await Promise.all([
+    fetchMapServicePlaces(keyword),
+    searchKakaoPlaces(keyword),
+  ]);
+
+  const uniquePlaces = new Map();
+  [...mapServicePlaces, ...kakaoPlaces].forEach((place) => {
+    if (!place?.x || !place?.y) return;
+    const key = `${place.place_name || place.name}|${place.x}|${place.y}`;
+    if (!uniquePlaces.has(key)) uniquePlaces.set(key, place);
+  });
+
+  return [...uniquePlaces.values()].slice(0, 8);
+}
+
+function renderQuickRouteResultList(places) {
+  if (!quickRouteResultList) return;
+
+  if (!places.length) {
+    quickRouteResultList.innerHTML = `
+      <div class="result-item quick-route-empty">
+        <strong>검색 결과가 없습니다.</strong>
+        <span>다른 장소명으로 입력해보세요.</span>
+      </div>
+    `;
+    quickRouteResultList.classList.remove("hidden");
+    return;
+  }
+
+  quickRouteResultList.innerHTML = "";
+
+  places.forEach((place) => {
+    const item = document.createElement("div");
+    item.className = "result-item";
+    item.innerHTML = `
+      <strong>${escapeHTML(place.place_name || place.name || "이름 없음")}</strong>
+      <span>${escapeHTML(place.road_address_name || place.address_name || place.address || "주소 정보 없음")}</span>
+    `;
+
+    item.addEventListener("click", () => selectQuickRoutePlace(place));
+    quickRouteResultList.appendChild(item);
+  });
+
+  quickRouteResultList.classList.remove("hidden");
+}
+
+function selectQuickRoutePlace(place) {
+  if (activeQuickRouteRole === "start") {
+    startPlace = place;
+    if (quickStartInput) quickStartInput.value = place.place_name || "";
+    updateStartMarker(place);
+  } else {
+    endPlace = place;
+    if (quickEndInput) quickEndInput.value = place.place_name || "";
+    updateEndMarker(place);
+  }
+
+  selectedPlaceForRoute = null;
+  currentRouteData = null;
+  clearRoutePolylines();
+  clearDangerZones();
+  hideQuickRouteResultList();
+  updatePlaceSheet();
+}
+
 function showPlaceSelectionPanel(place) {
   selectedPlaceForRoute = place;
   infoPanelState = "place-select";
@@ -749,6 +1430,7 @@ function setRouteEndpoint(place, role) {
     updateEndMarker(place);
   }
 
+  syncQuickRouteInputs();
   selectedPlaceForRoute = null;
   currentRouteData = null;
   clearRoutePolylines();
@@ -777,6 +1459,16 @@ function routeEndpointSummary() {
       ${endPlace ? '<button type="button" id="clearEndPlaceBtn">&#48320;&#44221;</button>' : ""}
     </div>
   `;
+}
+
+function syncQuickRouteInputs() {
+  if (quickStartInput) {
+    quickStartInput.value = startPlace?.place_name || "";
+  }
+
+  if (quickEndInput) {
+    quickEndInput.value = endPlace?.place_name || "";
+  }
 }
 
 function routeQueryParams() {
@@ -829,6 +1521,7 @@ async function loadSelectedRouteFromQuery() {
     };
 
     syncRouteEndpoints(data, route);
+    syncQuickRouteInputs();
     updateStartMarker(startPlace);
     updateEndMarker(endPlace);
     drawRoute({ path: route.path, colored: true });
@@ -870,6 +1563,7 @@ async function drawDefaultRouteFromSelection() {
     }
 
     syncRouteEndpoints(data, route);
+    syncQuickRouteInputs();
     updateStartMarker(startPlace);
     updateEndMarker(endPlace);
     drawRoute({ path: route.path, colored: true });
@@ -958,6 +1652,7 @@ function applyRouteSelection(data, route) {
   };
 
   syncRouteEndpoints(data, route);
+  syncQuickRouteInputs();
   updateStartMarker(startPlace);
   updateEndMarker(endPlace);
   drawRoute({ path: route.path, colored: true });
@@ -1085,6 +1780,7 @@ function handleBackButton() {
 
 function resetRouteState() {
   clearSearchMarkers();
+  clearNearbyFilterSelection();
   clearRoutePolylines();
   clearDangerZones();
 
@@ -1101,7 +1797,9 @@ function resetRouteState() {
   startPlace = null;
   endPlace = null;
   searchInput.value = "";
+  syncQuickRouteInputs();
   hideResultList();
+  hideQuickRouteResultList();
   document.body.classList.remove("route-mode");
   resetPlaceSheet();
 
@@ -1333,7 +2031,7 @@ async function updateWeatherBadge(lat, lng) {
   weatherBadge.classList.remove("hidden");
   weatherTemp.textContent = "--°";
   weatherSummary.textContent = "";
-  if (weatherIcon) weatherIcon.textContent = "";
+  setWeatherIcon();
 
   try {
     const params = new URLSearchParams({ lat, lng });
@@ -1347,15 +2045,36 @@ async function updateWeatherBadge(lat, lng) {
     const weather = data.weather;
     const temp = weather.temperature;
 
-    if (weatherIcon) weatherIcon.textContent = "";
+    setWeatherIcon(weather.code);
     weatherTemp.textContent = temp === null ? "--°" : `${Math.round(temp)}°`;
     weatherSummary.textContent = "";
   } catch (error) {
     console.warn("Weather badge error:", error);
     weatherTemp.textContent = "--°";
     weatherSummary.textContent = "";
-    if (weatherIcon) weatherIcon.textContent = "";
+    setWeatherIcon();
   }
+}
+
+function setWeatherIcon(code) {
+  if (!weatherIcon) return;
+
+  weatherIcon.className = `weather-icon ${weatherIconType(code)}`;
+}
+
+function weatherIconType(code) {
+  const weatherCode = Number(code);
+
+  if (weatherCode === 0) return "sunny";
+  if ([1, 2].includes(weatherCode)) return "partly-cloudy";
+  if (weatherCode === 3) return "cloudy";
+  if ([45, 48].includes(weatherCode)) return "foggy";
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(weatherCode)) {
+    return "rainy";
+  }
+  if ([71, 73, 75, 77, 85, 86].includes(weatherCode)) return "snowy";
+  if ([95, 96, 99].includes(weatherCode)) return "stormy";
+  return "cloudy";
 }
 
 function updatePlaceSheet() {
@@ -1924,4 +2643,5 @@ function clearSearchMarkers() {
 
   markers.forEach((marker) => marker.setMap(null));
   markers = [];
+  clickedPlaceMarker = null;
 }

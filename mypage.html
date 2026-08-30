@@ -16,7 +16,12 @@
           <button class="mypage-icon-button" type="button" aria-label="알림">
             <span class="bell-icon" aria-hidden="true"></span>
           </button>
-          <button class="mypage-icon-button" type="button" aria-label="설정">&#9881;</button>
+          <div class="mypage-settings">
+            <button class="mypage-icon-button" type="button" id="mypageSettingsBtn" aria-label="설정" aria-expanded="false">&#9881;</button>
+            <div class="settings-menu hidden" id="settingsMenu" role="menu">
+              <button type="button" id="logoutBtn" role="menuitem">로그아웃</button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -24,14 +29,14 @@
         <div class="profile-avatar" aria-hidden="true"></div>
         <div class="profile-main">
           <div class="profile-name-row">
-            <strong class="profile-name">길찾는하마</strong>
+            <strong class="profile-name" id="profileName">길찾는하마</strong>
             <span class="profile-badge" aria-label="열정적인 제보자">
               <span class="badge-mark" aria-hidden="true"></span>
               열정적인 제보자
             </span>
             <button class="profile-edit-button" type="button">편집</button>
           </div>
-          <p class="profile-email">email@gmail.com</p>
+          <p class="profile-email" id="profileEmail">email@gmail.com</p>
         </div>
       </section>
 
@@ -71,5 +76,47 @@
       </div>
     </section>
   </main>
+  <script>
+    const token = localStorage.getItem("accessnavToken");
+    const savedUser = localStorage.getItem("accessnavUser");
+
+    let user = null;
+    try {
+      user = savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      user = null;
+    }
+
+    if (!token || !user) {
+      location.replace("login.html");
+    } else {
+      const profileName = document.getElementById("profileName");
+      const profileEmail = document.getElementById("profileEmail");
+      const settingsBtn = document.getElementById("mypageSettingsBtn");
+      const settingsMenu = document.getElementById("settingsMenu");
+      const logoutBtn = document.getElementById("logoutBtn");
+
+      profileName.textContent = user.nickname || user.email?.split("@")[0] || "AccessNav 사용자";
+      profileEmail.textContent = user.email || "";
+
+      settingsBtn.addEventListener("click", () => {
+        const isOpen = !settingsMenu.classList.contains("hidden");
+        settingsMenu.classList.toggle("hidden", isOpen);
+        settingsBtn.setAttribute("aria-expanded", String(!isOpen));
+      });
+
+      document.addEventListener("click", (event) => {
+        if (settingsBtn.contains(event.target) || settingsMenu.contains(event.target)) return;
+        settingsMenu.classList.add("hidden");
+        settingsBtn.setAttribute("aria-expanded", "false");
+      });
+
+      logoutBtn.addEventListener("click", () => {
+        localStorage.removeItem("accessnavToken");
+        localStorage.removeItem("accessnavUser");
+        location.replace("index.html");
+      });
+    }
+  </script>
 </body>
 </html>
